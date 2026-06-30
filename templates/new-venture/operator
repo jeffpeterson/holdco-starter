@@ -30,6 +30,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Load this venture's machine-local env (HOLDCO_ROOT + any local tokens) and export
+# it so the operator's shell can resolve holdco tooling via $HOLDCO_ROOT/bin/...
+# (holdco-launched sessions get HOLDCO_ROOT via `tmux new-window -e` instead).
+set -a
+[[ -f .env ]] && source .env
+set +a
+
 PERSONA=".claude/agents/operator.md"
 [[ -f "$PERSONA" ]] || { echo "{{VENTURE}}: missing persona file $PERSONA" >&2; exit 1; }
 

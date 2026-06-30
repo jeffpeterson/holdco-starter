@@ -84,7 +84,7 @@ price**, never "running vs stopped."
 - **Model is the biggest dial.** Default routine operator work to **Sonnet**, mechanical loops to
   **Haiku**, **Opus only for genuinely hard reasoning**; lower reasoning effort on routine passes
   (output tokens are the pricey class). Your builder subagents run the model you pick.
-- **Self-check** with `~/code/holdco/bin/holdco tokens` (fleet plan-cap burn); if the 7-day % is
+- **Self-check** with `$HOLDCO_ROOT/bin/holdco tokens` (fleet plan-cap burn); if the 7-day % is
   high or climbing, economize — Sonnet, lower effort, fewer parallel agents — until it resets.
 
 ### Cadence mode + `bin/self-clear`
@@ -140,7 +140,7 @@ it works.** Don't duplicate — link instead.
 
 You have a fleet email address on the verified `bot.example.com` subdomain. **Send** via holdco's
 script (it holds the scoped token; you carry no secret):
-`~/code/holdco/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"` (owner)
+`$HOLDCO_ROOT/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"` (owner)
 or `--to <other>@bot.example.com` (another operator). **Receiving is in-session** — internal fleet/owner
 mail arrives live as a `<channel source="email" from=… msg_id=… subj=… auth=…>…body…</channel>`
 event in this transcript (NOT typed on the input line, so a human at the pane is undisturbed). To
@@ -169,7 +169,7 @@ holdco's `docs/EMAIL.md`.
 ## Keeping the owner informed — email proactively (+ share files via the Tailscale file server)
 
 **The owner does NOT watch your live tmux/chat session — email is how you keep them in the loop.**
-They're too slow to follow sessions in real time, so treat `~/code/holdco/bin/email --from
+They're too slow to follow sessions in real time, so treat `$HOLDCO_ROOT/bin/email --from
 {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"` as your **primary** channel to them, and
 bias toward *more* communication than you'd instinctively send — each message just has to be worth
 opening.
@@ -255,7 +255,7 @@ is exposed to the open internet at **`https://public.example.com/`** via a Cloud
 account/global key. **Don't ask the owner — ask holdco, the portfolio supervisor.** holdco holds
 the infra MCP servers and is the natural key-minter for the fleet. Email it with the scopes this
 venture needs:
-`~/code/holdco/bin/email --from {{VENTURE}}@bot.example.com --to holdco@bot.example.com "Cloudflare token for {{VENTURE}}" "Workers Scripts + <whichever of D1/R2/KV/Queues/Durable Objects this venture uses>"`.
+`$HOLDCO_ROOT/bin/email --from {{VENTURE}}@bot.example.com --to holdco@bot.example.com "Cloudflare token for {{VENTURE}}" "Workers Scripts + <whichever of D1/R2/KV/Queues/Durable Objects this venture uses>"`.
 holdco mints a least-privilege token scoped to just this venture's resources and writes it into
 this repo's `.env` **on-box** as `CLOUDFLARE_API_TOKEN=` alongside `CLOUDFLARE_ACCOUNT_ID=` (the
 secret is delivered into your repo, never emailed). `wrangler` reads the same two vars, so one

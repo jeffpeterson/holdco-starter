@@ -105,16 +105,12 @@ unless errors.empty?
   exit 1
 end
 
-# Canonical install location: operator personas + fleet tooling reference holdco by
-# the absolute path ~/code/holdco. Warn (non-fatal) if we're living somewhere else.
-CANONICAL = File.expand_path("~/code/holdco")
-if ROOT != CANONICAL
-  puts
-  say yellow("  ! holdco is at #{ROOT}, not #{CANONICAL}.")
-  say yellow("    Venture operators reference holdco's tooling by the absolute path #{CANONICAL}")
-  say yellow("    (e.g. ~/code/holdco/bin/email, ~/code/holdco/bin/holdco, source ~/code/holdco/.env),")
-  say yellow("    so cross-repo calls may break from here. Clone or move this repo to #{CANONICAL}.")
-end
+# Location-independent: holdco runs from wherever it was cloned. We record that
+# absolute path as HOLDCO_ROOT (see below) and default new ventures to siblings of
+# it. Both are overridable in .env (VENTURES_ROOT).
+VENTURES_DEFAULT = File.dirname(ROOT)
+puts
+say dim("  Detected holdco at #{ROOT}; ventures will be created as siblings under #{VENTURES_DEFAULT} (override VENTURES_ROOT in .env).")
 
 if CHECK_ONLY
   puts
@@ -199,6 +195,9 @@ if INTERACTIVE
     vals["GITHUB_PAT"] = ask_secret("GitHub PAT (repo + workflow)", existing["GITHUB_PAT"])
   end
 end
+
+# Always record where this holdco checkout lives so venture tooling can resolve it.
+vals["HOLDCO_ROOT"] = ROOT
 
 # ---- write .env (from .env.example, overlaying collected values) ------------
 head "Writing .env"

@@ -25,7 +25,7 @@ Set via `wrangler secret put` — never in git or wrangler.toml:
 | `OWNER_TOKEN` | Browser session cookie; submit at `/login`  |
 | `AGENT_TOKEN` | Bearer token for agents / `bin/holdco` CLI  |
 
-The deploy token (`CLOUDFLARE_TASKS_TOKEN`) lives in `~/code/holdco/.env` (gitignored).
+The deploy token (`CLOUDFLARE_TASKS_TOKEN`) lives in `$HOLDCO_ROOT/.env` (gitignored).
 The ambient `CLOUDFLARE_API_TOKEN` in the environment is read-only and cannot deploy.
 
 ## Redeploy
@@ -37,7 +37,7 @@ bin/deploy.sh --migrate-only
 bin/deploy.sh --deploy-only
 ```
 
-The script reads `CLOUDFLARE_TASKS_TOKEN` from `~/code/holdco/.env` automatically.
+The script reads `CLOUDFLARE_TASKS_TOKEN` from `$HOLDCO_ROOT/.env` automatically.
 
 ## API
 

@@ -28,8 +28,14 @@ namespace :ventures do
   PORTFOLIO_FILE = "PORTFOLIO.md".freeze
   PORTFOLIO_HEADER = "lib/tasks/templates/portfolio_header.md".freeze
   TEMPLATE_DIR = "templates/new-venture".freeze
-  # Where new venture repos are created. Override with VENTURES_ROOT.
-  VENTURES_ROOT = ENV.fetch("VENTURES_ROOT", File.expand_path("..", Dir.pwd)).freeze
+  # Absolute path to this holdco checkout (location-independent — derived from this
+  # rake file, not from cwd). Scaffolded ventures + their operators resolve holdco's
+  # tooling and secrets via this, exported as $HOLDCO_ROOT.
+  HOLDCO_ROOT = File.expand_path("../..", __dir__).freeze
+  # Where new venture repos are created. Default: holdco's parent dir (ventures are
+  # SIBLINGS of holdco). Override with VENTURES_ROOT; existing ventures may live
+  # anywhere — their path is recorded per-venture in ventures/<id>.md (repo:).
+  VENTURES_ROOT = ENV.fetch("VENTURES_ROOT", File.dirname(HOLDCO_ROOT)).freeze
   # True when the caller set VENTURES_ROOT explicitly (e.g. a scaffold smoke-test).
   # In that mode ventures:new skips the real registry write so no phantom venture leaks in.
   VENTURES_ROOT_OVERRIDE = ENV.key?("VENTURES_ROOT").freeze
@@ -258,7 +264,10 @@ namespace :ventures do
     # steals the owner's current view (no active-window switch as a side effect).
     # -e binds the operator's email-channel inbox into the launched process env; it
     # flows through bin/operator-loop (inherits env) to the claude/channel MCP server.
-    tmux_prefix = [ "tmux", "new-window", "-d", "-e", "EMAIL_CHANNEL_ADDR=#{addr}",
+    # HOLDCO_ROOT lets the operator resolve holdco tooling ($HOLDCO_ROOT/bin/email etc.)
+    # regardless of where holdco or the venture live.
+    tmux_prefix = [ "tmux", "new-window", "-d",
+                    "-e", "EMAIL_CHANNEL_ADDR=#{addr}", "-e", "HOLDCO_ROOT=#{HOLDCO_ROOT}",
                     "-t", target, "-n", window, "-c", repo ]
     style_cmds  = window_style_cmds(target, window, color)
 
@@ -374,6 +383,17 @@ namespace :ventures do
       FileUtils.mv(launcher, File.join(dest, name))
       FileUtils.chmod(0o755, File.join(dest, name))
     end
+
+    # Seed the venture's machine-local .env (gitignored) with HOLDCO_ROOT so the
+    # operator's shell resolves holdco tooling/secrets via $HOLDCO_ROOT — both when
+    # launched by holdco (ventures:run passes -e HOLDCO_ROOT) and when run directly
+    # via ./#{name} (the launcher sources this .env). Add tasks/email tokens here later.
+    File.write(File.join(dest, ".env"), <<~ENV)
+      # Machine-local env for this venture's operator — gitignored, never committed.
+      # HOLDCO_ROOT: absolute path to the holdco checkout that scaffolded this venture.
+      # Operators resolve holdco tooling ($HOLDCO_ROOT/bin/email, /bin/holdco) + secrets via it.
+      HOLDCO_ROOT=#{HOLDCO_ROOT}
+    ENV
 
     # CLAUDE.md -> AGENTS.md symlink (matches the established convention).
     Dir.chdir(dest) do

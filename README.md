@@ -31,22 +31,23 @@ command**.
 
 ## Install
 
-**This repo IS your holdco.** Clone it to **`~/code/holdco`** — that exact path is
-strongly recommended:
+**This repo IS your holdco — clone it anywhere.** It's location-independent:
+`bin/bootstrap` detects where it lives and records that path as `HOLDCO_ROOT`
+in `.env`, so operators and venture tooling resolve holdco (e.g.
+`$HOLDCO_ROOT/bin/email`, `$HOLDCO_ROOT/bin/holdco`, sourcing `$HOLDCO_ROOT/.env`)
+no matter where you put it.
 
 ```
-git clone <your-repo-url> ~/code/holdco
+git clone <your-repo-url> ~/code/holdco   # ~/code/holdco is a tidy default, not required
 cd ~/code/holdco
 bin/bootstrap
 ```
 
-The operator personas and fleet tooling reference holdco by the absolute path
-`~/code/holdco` (e.g. `~/code/holdco/bin/email`, `~/code/holdco/bin/holdco`, and
-sourcing `~/code/holdco/.env`). Venture repos are created as **siblings** under
-`~/code/` by default (e.g. `~/code/acme`). If you install holdco anywhere else,
-those cross-repo paths in operator personas won't resolve and fleet tooling calls
-will break — so `~/code/holdco` is the canonical home. `bin/bootstrap` warns if it
-detects holdco living elsewhere.
+By default new venture repos are scaffolded as **siblings** of holdco (so cloning
+to `~/code/holdco` puts ventures at `~/code/acme`). Override where new ventures land
+with `VENTURES_ROOT` in `.env`. An existing venture can live **anywhere** — its path
+is recorded per-venture in `ventures/<id>.md` (the `repo:` field), and all fleet
+tooling resolves each venture by that recorded path, not by a fixed base.
 
 ## Setup
 

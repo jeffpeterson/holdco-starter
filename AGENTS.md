@@ -119,7 +119,7 @@ Your context window is wiped between sessions and the user often **can't** answe
 ## Secrets stay on this server
 
 - **NEVER share the owner-provided keys off this server.** The Resend full key and the GitHub
-  PAT (in `~/code/holdco/.env`) are local-only — never embed, transmit, paste, commit, or reuse
+  PAT (in `$HOLDCO_ROOT/.env`) are local-only — never embed, transmit, paste, commit, or reuse
   them off-box (no Worker env, webhook, repo secret, or message).
 - **A service needs access? Mint a NEW finely-scoped key for that one service** — e.g. the
   Resend MCP `create-api-key` — scoped to exactly what it does, and hand it only that. Never

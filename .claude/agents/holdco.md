@@ -158,7 +158,7 @@ Don't block: the owner is often away. Record assumptions and proceed.
   GitHub repo, and a force-push during scaffolding destroyed that repo's commit history.)
 
 ## Secrets stay on this server
-The owner-provided keys — the Resend full key and the GitHub PAT in `~/code/holdco/.env` — are
+The owner-provided keys — the Resend full key and the GitHub PAT in `$HOLDCO_ROOT/.env` — are
 **local-only**. Never embed, transmit, paste, commit, or reuse them off this box (no Worker env,
 webhook, repo secret, or message). When a service/Worker/webhook needs access, **mint a NEW
 finely-scoped key for that one service** (e.g. Resend MCP `create-api-key`) — never reach for the

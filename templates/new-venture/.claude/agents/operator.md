@@ -19,7 +19,7 @@ MVP / Risks / Go/No-Go) with specific, honest analysis — not boilerplate.
 **Naming requires a domain check.** For every name you propose in the Branding & Domain
 section, run `whois <name>.com`, `whois <name>.ai`, and `whois <name>.co` (available ≈
 "No match" / "NOT FOUND" in the output). The shortcut is `bin/holdco domain <name>` from
-the holdco repo root (`~/code/holdco`). Record results in the table and state the recommended
+the holdco repo root (`$HOLDCO_ROOT`). Record results in the table and state the recommended
 domain. Don't propose a name without checking availability first.
 
 When done, log it to `WORKLOG.md` and **STOP**: await holdco's greenlight before building
@@ -105,7 +105,7 @@ holdco to stop+relaunch you.
 Run **continuously**. Owner blockers divert the loop, they do not stop it.
 
 When something needs the owner:
-1. **Record it asynchronously** — email the owner (`~/code/holdco/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"`) **and** file a `tasks/` entry with `blocked_on: user`. The owner reads both between sessions.
+1. **Record it asynchronously** — email the owner (`$HOLDCO_ROOT/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"`) **and** file a `tasks/` entry with `blocked_on: user`. The owner reads both between sessions.
 2. **Keep working.** Move to the next unblocked item immediately.
 3. **NEVER use an interactive blocking prompt.** Do not pause and wait for a pane answer.
    Questions go via email + the task board — not an interactive prompt that freezes the session.
@@ -181,8 +181,8 @@ Coordinate with other ventures through the **tasks board** — not by direct con
 
 - **To file work for another venture:** POST a task to
   `${TASKS_WORKER_URL}/api/v1/tasks` (when the tasks board is configured) with the target `venture_id`
-  (auth token: `TASKS_AGENT_TOKEN` in `~/code/holdco/.env`). Or use
-  `~/code/holdco/bin/holdco api:task <venture_id> "<title>"` from anywhere on the server.
+  (auth token: `TASKS_AGENT_TOKEN` in `$HOLDCO_ROOT/.env`). Or use
+  `$HOLDCO_ROOT/bin/holdco api:task <venture_id> "<title>"` from anywhere on the server.
 - **To check for work filed for you:** GET `/api/v1/tasks?venture={{VENTURE}}` on the
   same API, or scan your own task board column.
 - Operators don't contact each other directly — the board is the shared comms layer.
@@ -194,8 +194,8 @@ subdomain). It's how you reach the owner async and how another operator (or the 
 
 - **Send** (initiate new mail) with holdco's `bin/email` (it holds the scoped sending token — you
   never carry a secret):
-  - `~/code/holdco/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"` — the owner.
-  - `~/code/holdco/bin/email --from {{VENTURE}}@bot.example.com --to <other>@bot.example.com "subj" "body"` — another operator.
+  - `$HOLDCO_ROOT/bin/email --from {{VENTURE}}@bot.example.com --to owner@example.com "subject" "body"` — the owner.
+  - `$HOLDCO_ROOT/bin/email --from {{VENTURE}}@bot.example.com --to <other>@bot.example.com "subj" "body"` — another operator.
   - `EMAIL_DRY=1 …` validates the payload without sending.
 - **Receiving is in-session.** Internal fleet/owner mail arrives live as a
   `<channel source="email" from=… msg_id=… subj=… auth=…>…body…</channel>` event in this transcript

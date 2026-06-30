@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Deploy holdco-tasks Worker + apply D1 migrations.
-# Reads CLOUDFLARE_TASKS_TOKEN from ~/code/holdco/.env (never committed).
+# Reads CLOUDFLARE_TASKS_TOKEN from $HOLDCO_ROOT/.env (never committed).
 #
 # Usage: bin/deploy.sh [--migrate-only | --deploy-only]
 set -euo pipefail
 
-ENV_FILE="$HOME/code/holdco/.env"
+# Location-independent: prefer $HOLDCO_ROOT, else derive the repo root from this
+# script's path (services/tasks/bin/deploy.sh → three levels up).
+HOLDCO_ROOT="${HOLDCO_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+ENV_FILE="$HOLDCO_ROOT/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: $ENV_FILE not found" >&2
   exit 1

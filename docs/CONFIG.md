@@ -11,7 +11,8 @@ the durable ones live in `.env` (gitignored — `bin/bootstrap` writes it from
 |-----|---------|--------------|
 | `OWNER_EMAIL` | `owner@example.com` | Where the fleet sends owner-facing mail + digests. |
 | `FLEET_EMAIL_DOMAIN` | _(blank)_ | Verified sending subdomain every fleet address lives on (e.g. `bot.example.com`). Each operator gets `<id>@<this domain>`. **Blank disables all email features.** |
-| `VENTURES_ROOT` | repo's parent dir | Where `bin/holdco new` scaffolds new venture repos. |
+| `HOLDCO_ROOT` | this checkout's path | Absolute path to the holdco checkout — auto-set by `bin/bootstrap`. Operators + venture tooling resolve holdco (`$HOLDCO_ROOT/bin/email`, `/bin/holdco`, `/.env`) via it, so holdco is location-independent. |
+| `VENTURES_ROOT` | `HOLDCO_ROOT`'s parent | Where `bin/holdco new` scaffolds new venture repos (siblings of holdco by default). Existing ventures may live anywhere — their path is recorded per-venture in `ventures/<id>.md`. |
 | `HOLDCO_TMUX_SESSION` | `holdco` | tmux session name the fleet runs in. |
 
 ## Models
