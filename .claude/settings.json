@@ -1,0 +1,24 @@
+{
+  "enabledPlugins": {
+    "email@holdco-fleet": true
+  },
+  "fallbackModel": ["claude-sonnet-4-6", "claude-haiku-4-5"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'open=$(find tasks -name \"*.md\" ! -name \"_*\" 2>/dev/null | xargs grep -l \"^status: open\" 2>/dev/null | wc -l | tr -d \" \"); ventures=$(ls ventures/*.md 2>/dev/null | grep -v \"_\" | wc -l | tr -d \" \"); echo \"=== Post-compact context: holdco portfolio operator | $ventures venture(s) in ventures/ (PORTFOLIO.md) | $open open portfolio task(s) in TASKS.md | rules: AGENTS.md | log each pass to WORKLOG.md ===\"'"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "${CLAUDE_PROJECT_DIR}/bin/usage-statusline",
+    "padding": 0
+  }
+}

@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+#
+# bin/holdco-tokens — fleet-wide token/usage view (backs `bin/holdco tokens`).
+#
+# Reads the per-session caches written by bin/usage-statusline (one file per
+# venture/holdco under ~/.cache/claude-usage/usage.*) and prints:
+#   * the worst-case (MAX) 7-day plan-cap % across the fleet + its reset — the
+#     "are we approaching the weekly cap" signal (rate_limits is account-wide,
+#     so the max across sessions is simply the freshest reading);
+#   * the per-session breakdown (model, context %, 5h/7d %, age);
+#   * a directional daily $ spend via ccusage (npx/installed), cached so the
+#     tmux path never blocks on the network.
+#
+# Modes:
+#   bin/holdco-tokens          readable table (default)
+#   bin/holdco-tokens --tmux    one-liner for the status bar
+#
+# Deps: bash only (jq optional, used only to read ccusage JSON). Degrades to a
+# usable view when ccusage / caches are missing.
+
+set -uo pipefail
+export LC_ALL=C
+
+CACHE_DIR="$HOME/.cache/claude-usage"
+CCUSAGE_CACHE="$CACHE_DIR/ccusage-daily"
+CCUSAGE_TTL=600 # seconds; tmux reads this cache, table mode refreshes it
+CACHE_TTL_SECONDS=300 # prompt-cache warm window (sliding, reset each turn)
+now="$(date +%s)"
+
+MODE="table"
+[ "${1:-}" = "--tmux" ] && MODE="tmux"
+
+JQ="$(command -v jq 2>/dev/null || true)"
+
+# ---- read caches ------------------------------------------------------------
+
+# Round a possibly-float percentage to an integer; empty -> empty.
+round() { [ -n "${1:-}" ] && printf '%.0f' "$1" 2>/dev/null || true; }
+
+# Humanize seconds-until as "4d" / "5h" / "12m".
+human_until() {
+	local s="$1"
+	((s < 0)) && s=0
+	if ((s >= 86400)); then printf '%dd' $((s / 86400))
+	elif ((s >= 3600)); then printf '%dh' $((s / 3600))
+	else printf '%dm' $(((s + 59) / 60)); fi
+}
+
+shopt -s nullglob
+files=("$CACHE_DIR"/usage.*)
+
+max_seven=-1 max_seven_reset="" max_five=-1 max_five_reset=""
+rows=() # label|model|ctx|five|seven|age_secs
+
+for f in "${files[@]}"; do
+	label="" model="" ctx="" five="" seven="" five_reset="" seven_reset="" updated="" tok="" cache="" sendcost="" lastturn=""
+	while IFS='=' read -r k v; do
+		case "$k" in
+		LABEL) label="$v" ;;
+		MODEL) model="$v" ;;
+		CTX_PCT) ctx="$v" ;;
+		CTX_TOKENS) tok="$v" ;;
+		CACHE_PCT) cache="$v" ;;
+		SEND_COST) sendcost="$v" ;;
+		LAST_TURN_TS) lastturn="$v" ;;
+		FIVE_HOUR_PCT) five="$v" ;;
+		FIVE_HOUR_RESET) five_reset="$v" ;;
+		SEVEN_DAY_PCT) seven="$v" ;;
+		SEVEN_DAY_RESET) seven_reset="$v" ;;
+		UPDATED_AT) updated="$v" ;;
+		esac
+	done <"$f"
+	[ -n "$label" ] || label="$(basename "$f" | sed 's/^usage\.//')"
+	age=$((now - ${updated:-now}))
+	rows+=("$label|$model|$ctx|$five|$seven|$age|$tok|$cache|$sendcost|$lastturn")
+
+	# Fleet maxima (account-wide cap: max == freshest reading; carry its reset).
+	if [ -n "$seven" ]; then
+		awk -v a="$seven" -v b="$max_seven" 'BEGIN{exit !(a+0>b+0)}' && {
+			max_seven="$seven"; max_seven_reset="$seven_reset"
+		}
+	fi
+	if [ -n "$five" ]; then
+		awk -v a="$five" -v b="$max_five" 'BEGIN{exit !(a+0>b+0)}' && {
+			max_five="$five"; max_five_reset="$five_reset"
+		}
+	fi
+done
+
+# ---- ccusage daily $ (cached) ----------------------------------------------
+
+# Echo today's fleet $ spend. In table mode, refresh the cache (may run npx,
+# blocking briefly). In tmux mode, only read the cache — never block a redraw.
+daily_cost() {
+	local today; today="$(date +%F)"
+	local fresh=0
+	if [ -f "$CCUSAGE_CACHE" ]; then
+		local cached_at; cached_at="$(sed -n 's/^AT=//p' "$CCUSAGE_CACHE")"
+		[ -n "$cached_at" ] && ((now - cached_at < CCUSAGE_TTL)) && fresh=1
+	fi
+
+	if [ "$MODE" = "table" ] && [ "$fresh" = 0 ] && [ -n "$JQ" ]; then
+		local bin="" json cost
+		if command -v ccusage >/dev/null 2>&1; then bin="ccusage"
+		elif command -v npx >/dev/null 2>&1; then bin="npx -y ccusage@latest"; fi
+		if [ -n "$bin" ]; then
+			json="$(timeout 90 $bin daily --json 2>/dev/null)"
+			cost="$(printf '%s' "$json" | "$JQ" -r --arg d "$today" \
+				'.daily[]? | select(.period==$d) | .totalCost' 2>/dev/null | head -1)"
+			if [ -n "$cost" ]; then
+				mkdir -p "$CACHE_DIR"
+				printf 'AT=%s\nDATE=%s\nCOST=%s\n' "$now" "$today" "$cost" >"$CCUSAGE_CACHE"
+			fi
+		fi
+	fi
+
+	# Read whatever the cache holds (only trust it if it's for today).
+	if [ -f "$CCUSAGE_CACHE" ]; then
+		local d c; d="$(sed -n 's/^DATE=//p' "$CCUSAGE_CACHE")"; c="$(sed -n 's/^COST=//p' "$CCUSAGE_CACHE")"
+		[ "$d" = "$today" ] && [ -n "$c" ] && printf '%.0f' "$c" 2>/dev/null && return
+	fi
+	return 1
+}
+
+# ---- render -----------------------------------------------------------------
+
+seven_disp="$(round "$max_seven")"; [ "$max_seven" = "-1" ] && seven_disp=""
+five_disp="$(round "$max_five")"; [ "$max_five" = "-1" ] && five_disp=""
+reset_in=""
+if [[ "$max_seven_reset" =~ ^[0-9]+$ ]]; then reset_in="$(human_until $((max_seven_reset - now)))"; fi
+cost_today="$(daily_cost || true)"
+
+if [ "$MODE" = "tmux" ]; then
+	# Compact: "Fleet 72%wk · resets 4d · $18 today". Color by 7d threshold.
+	if [ -z "$seven_disp" ]; then
+		# No cap data yet — show cost if we have it, else stay quiet.
+		[ -n "$cost_today" ] && printf 'Fleet $%s today' "$cost_today"
+		exit 0
+	fi
+	color="default"
+	((seven_disp >= 90)) && color="red" || { ((seven_disp >= 70)) && color="yellow"; }
+	out="Fleet ${seven_disp}%wk"
+	[ -n "$reset_in" ] && out+=" · resets $reset_in"
+	[ -n "$cost_today" ] && out+=" · \$$cost_today today"
+	printf '#[fg=%s]%s#[default]' "$color" "$out"
+	exit 0
+fi
+
+# --- table mode ---
+bold=""; dim=""; rst=""; grn=""; ylw=""; redc=""
+if [ -t 1 ]; then bold=$'\e[1m'; dim=$'\e[2m'; rst=$'\e[0m'; grn=$'\e[32m'; ylw=$'\e[33m'; redc=$'\e[31m'; fi
+
+# Pace + projection for one cap. Args: <label> <used%> <reset_epoch> <window_secs>.
+# Compares used% against how far through the window we are (elapsed) and linearly
+# projects end-of-window usage, with an ON TRACK / WATCH / OVER PACE verdict.
+# Degrades to bare used% if the reset epoch is missing/stale (null on a fresh
+# session); shows "warming up" instead of a wild projection just after a reset.
+pace_line() {
+	local lbl="$1" reset="$3" win="$4" u
+	u="$(round "$2")"
+	if ! [[ "$reset" =~ ^[0-9]+$ ]] || [ -z "$u" ]; then
+		printf '  %-11s %s%% used %s(no reset data — pace unknown)%s\n' "$lbl" "${u:-?}" "$dim" "$rst"
+		return
+	fi
+	local remain=$((reset - now)); ((remain < 0)) && remain=0
+	local resin; resin="$(human_until "$remain")"
+	# Float math in awk: emit "elapsed%|projection%|verdict" (verdict=warming when
+	# barely into the window, so the projection isn't an explosive divide-by-~0).
+	local out ep rest
+	out="$(awk -v u="$u" -v r="$remain" -v w="$win" 'BEGIN{
+		frac = 1 - r/w
+		if (frac < 0) frac = 0; if (frac > 1) frac = 1
+		ep = int(frac*100 + 0.5)
+		if (frac < 0.05) { print ep "|warming"; exit }
+		p = u/frac; if (p > 999) p = 999
+		v = (p < 85) ? "ontrack" : (p <= 100 ? "watch" : "over")
+		print ep "|" int(p+0.5) "|" v
+	}')"
+	IFS='|' read -r ep rest <<<"$out"
+	if [ "$rest" = "warming" ]; then
+		printf '  %-11s %s%% used · %s%% elapsed · %sproj — (warming up)%s (%s)\n' \
+			"$lbl" "$u" "$ep" "$dim" "$rst" "$resin"
+		return
+	fi
+	local proj verdict; IFS='|' read -r proj verdict <<<"$rest"
+	local projstr="$proj%"; [ "$proj" = "999" ] && projstr="999%+"
+	local vc vlabel
+	case "$verdict" in
+	ontrack) vc="$grn";  vlabel="ON TRACK" ;;
+	watch)   vc="$ylw";  vlabel="WATCH" ;;
+	over)    vc="$redc"; vlabel="OVER PACE" ;;
+	esac
+	printf '  %-11s %s%% used · %s%% elapsed · proj %s by reset (%s)   %s%s%s\n' \
+		"$lbl" "$u" "$ep" "$projstr" "$resin" "$vc" "$vlabel" "$rst"
+}
+
+echo "${bold}Fleet token usage${rst}"
+if [ -n "$seven_disp" ]; then
+	pace_line "7-day cap:" "$max_seven" "$max_seven_reset" 604800
+else
+	echo "  ${dim}7-day plan cap: no data yet — sessions report it after their first API call${rst}"
+fi
+[ -n "$five_disp" ] && pace_line "5-hour cap:" "$max_five" "$max_five_reset" 18000
+if [ -n "$cost_today" ]; then
+	echo "  Spend today (ccusage):       \$$cost_today ${dim}(claude + codex)${rst}"
+else
+	echo "  ${dim}Spend today: ccusage unavailable${rst}"
+fi
+echo
+
+if ((${#rows[@]} == 0)); then
+	echo "  ${dim}No session caches yet ($CACHE_DIR/usage.*).${rst}"
+	echo "  ${dim}Each session writes one after it renders post-API-call with the harvester wired.${rst}"
+	exit 0
+fi
+
+# Compact token count: 638718 -> "639k".
+fmt_k() { [ -n "${1:-}" ] && { (("$1" >= 1000)) && printf '%dk' $((($1 + 500) / 1000)) || printf '%s' "$1"; } || true; }
+
+printf "  ${dim}%-16s %-12s %6s %6s %6s %7s %6s %5s %5s %7s${rst}\n" \
+	"session" "model" "tok" "cache" "warm" "send\$" "ctx" "5h" "7d" "age"
+# Sort rows by 7d desc (hottest first); empty 7d sorts last.
+for r in "${rows[@]}"; do
+	IFS='|' read -r label model ctx five seven age tok cache sendcost lastturn <<<"$r"
+	printf '%s\t%s\n' "${seven:-0}" "$r"
+done | sort -rn -k1 | cut -f2- | while IFS='|' read -r label model ctx five seven age tok cache sendcost lastturn; do
+	c="$(round "$ctx")"; f="$(round "$five")"; s="$(round "$seven")"
+	tk="$(fmt_k "$tok")"
+	# Cache: green warm / yellow <50 / red <20 (low cache = expensive), matching
+	# the per-session footer in bin/usage-statusline.
+	ch=""; ccol=""
+	if [ -n "$cache" ]; then
+		ch="$cache%"
+		((cache < 50)) && ccol="$ylw"; ((cache < 20)) && ccol="$redc"
+	fi
+	# Cache-freshness countdown: this view refreshes reliably (on-demand + tmux
+	# 60s), so a live "Nm" remaining-warm is honest here (unlike the per-pane
+	# footer). green warm / red cold past the 300s TTL.
+	wm="—"; wcol=""
+	if [[ "$lastturn" =~ ^[0-9]+$ ]]; then
+		remain=$((CACHE_TTL_SECONDS - (now - lastturn)))
+		if ((remain > 0)); then wm="$(human_until "$remain")"; wcol="$grn"; else wm="cold"; wcol="$redc"; fi
+	fi
+	sc=""; [ -n "$sendcost" ] && sc="~\$$sendcost"
+	agestr="$(human_until "$age") ago"
+	printf "  %-16s %-12s %6s ${ccol}%6s${rst} ${wcol}%6s${rst} %7s %6s %5s %5s %7s\n" \
+		"$label" "${model:-?}" "${tk:-—}" "${ch:-—}" "$wm" "${sc:-—}" "${c:+$c%}" "${f:+$f%}" "${s:+$s%}" "$agestr"
+done

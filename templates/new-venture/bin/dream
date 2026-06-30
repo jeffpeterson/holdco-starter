@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# bin/dream — the "dream cycle": sleep-time memory consolidation + context hygiene.
+#
+# Every animal sleeps to consolidate memory and shed noise; an autonomous operator
+# should too. This launches a CHEAP-model claude agent with the dream persona that
+# reads this repo's memory files, archives the stale, shortens the verbose, merges
+# duplicates, mines WORKLOG.md for uncaptured lessons, triages recurring tool errors,
+# flags persona bloat, and commits a dated journal to docs/dreams/. It is maintenance,
+# NOT product work — never run it on Opus, and it never pushes.
+#
+# It works on whichever repo it's run from: the memory dir is derived from the repo's
+# absolute path (~/.claude/projects/<slug>/memory/, slug = path with non-alphanumerics
+# → "-"), and the operator/holdco persona in this repo is the one whose hygiene is
+# reviewed.
+#
+# USAGE:
+#   bin/dream                 run the dream cycle for this repo (skips if <12h since last)
+#   bin/dream --force         run even if the last dream was recent
+#   bin/dream --dry-run       print what it would do, then exit
+#   bin/dream --venture <id>  (holdco only) dream for a registered venture instead
+#
+# CONFIG (env):
+#   DREAM_MODEL   cheap model alias for the agent (default: sonnet; haiku also fine — never opus)
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+DRY=0; FORCE=0; VENTURE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1 ;;
+    --force)   FORCE=1 ;;
+    --venture) VENTURE="${2:-}"; shift; [[ -n "$VENTURE" ]] || { echo "dream: --venture needs an <id>" >&2; exit 1; } ;;
+    -h|--help)
+      awk 'NR>=3 && /^#/ {sub(/^# ?/,""); print; next} NR>=3 {exit}' "$0"
+      exit 0 ;;
+    *) echo "dream: unknown arg: $1 (try --help)" >&2; exit 1 ;;
+  esac
+  shift
+done
+
+# --venture <id> only makes sense from the holdco repo (which has the registry + CLI).
+# Delegate to `bin/holdco dream <id>`, which resolves the venture's repo and runs ITS bin/dream.
+if [[ -n "$VENTURE" ]]; then
+  [[ -x bin/holdco ]] || { echo "dream: --venture only works from the holdco repo" >&2; exit 1; }
+  exec bin/holdco dream "$VENTURE"
+fi
+
+PERSONA=".claude/agents/dream.md"
+[[ -f "$PERSONA" ]] || { echo "dream: missing persona file $PERSONA" >&2; exit 1; }
+
+# Memory dir for THIS repo: Claude Code slugifies the cwd's absolute path by replacing
+# every non-alphanumeric char with "-" (e.g. /path/to/foo → -path-to-foo).
+REPO=$(basename "$(pwd -P)")
+SLUG=$(pwd -P | sed 's/[^a-zA-Z0-9]/-/g')
+MEM_DIR="$HOME/.claude/projects/$SLUG/memory"
+
+# Cadence: skip if we dreamed less than 12h ago (unless --force). The agent touches
+# this marker when done; we also touch it below as a backstop.
+LAST="docs/dreams/.last"
+mkdir -p docs/dreams
+if [[ "$FORCE" != 1 && -f "$LAST" ]]; then
+  age=$(( $(date +%s) - $(stat -c %Y "$LAST") ))
+  if (( age < 12 * 3600 )); then
+    echo "dream: last dream $(( age / 3600 ))h ago (<12h) — skipping. Use --force to override."
+    exit 0
+  fi
+fi
+
+# Safety guard: refuse to dream on a dirty working tree. The dream's commit uses
+# explicit paths only, but running on a mixed tree risks context confusion and
+# unintended sweeps. Commit or stash your work first, then dream.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "dream: working tree has uncommitted changes — commit or stash before dreaming." >&2
+  echo "  Run 'git status' to see what's dirty. Dream aborted." >&2
+  exit 1
+fi
+
+MODEL="${DREAM_MODEL:-sonnet}"
+GOAL="/goal Run the dream cycle for the '$REPO' repo. Your memory dir is \$MEM_DIR ($MEM_DIR). Work through every step in your dream persona in order, then touch docs/dreams/.last and stop."
+
+if [[ "$DRY" == 1 ]]; then
+  echo "dream (dry-run):"
+  echo "  repo:    $REPO"
+  echo "  persona: $PERSONA"
+  if [[ -d "$MEM_DIR" ]]; then
+    echo "  memory:  $MEM_DIR ($(find "$MEM_DIR" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ') files)"
+  else
+    echo "  memory:  $MEM_DIR (MISSING — nothing to consolidate yet)"
+  fi
+  echo "  model:   $MODEL"
+  echo "  journal: docs/dreams/$(date +%F).md"
+  if [[ -f "$LAST" ]]; then
+    echo "  last:    $(date -r "$LAST" '+%F %H:%M')"
+  else
+    echo "  last:    never"
+  fi
+  echo "  would run: claude --append-system-prompt-file $PERSONA --model $MODEL --dangerously-skip-permissions \"<dream goal>\""
+  exit 0
+fi
+
+export MEM_DIR
+echo "dream: consolidating '$REPO' on $MODEL (memory: $MEM_DIR) …"
+claude \
+  --append-system-prompt-file "$PERSONA" \
+  --model "$MODEL" \
+  --dangerously-skip-permissions \
+  "$GOAL"
+
+# Backstop: the persona touches .last itself, but advance the cadence marker even if
+# the agent forgot, so a crashed dream doesn't loop on every invocation.
+touch "$LAST"
+echo "dream: done — journal in docs/dreams/, cadence marker touched."

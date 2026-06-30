@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# ./{{VENTURE}} — launch Claude Code as the autonomous operator for {{TITLE}}.
+#
+# Boots an interactive Claude session with the operator persona injected, full
+# autonomy (permissions skipped), the most capable model, remote control so you can
+# steer from claude.ai/code or the mobile app, and a standing-work driver.
+#
+# This business is overseen by holdco (the portfolio manager). This launcher runs
+# the operator for THIS business only.
+#
+# Toggles (env vars):
+#   OP_MODEL     model alias/id         (default: sonnet; set OP_MODEL=opus for hard reasoning)
+#   OP_REMOTE    1=remote-control on    (default: 1)  — needs claude.ai sub; set 0 if it errors
+#   OP_DRIVE     standing-work driver   (default: loop)
+#                  loop  — /loop: wake on a cadence (or self-paced), make a pass, rest.
+#                  goal  — /goal: never idle-stop until the goal holds.
+#                  none  — plain interactive session, no standing driver.
+#   OP_LOOP_EVERY  loop cadence, e.g. 30m (default: empty = self-paced)
+#   OP_GOAL        goal text for DRIVE=goal (default: the standing work prompt)
+#   OP_RESUME      1=resume the last session (--continue)  (default: 0 = clean context)
+#   OP_NO_LOOP     1=don't supervise under bin/operator-loop (default: 0 = supervise)
+#
+# Any extra args are passed through to `claude` as the opening prompt.
+#
+# Standing-driver sessions (loop/goal) run under bin/operator-loop, which recycles
+# the claude process before its RSS can balloon and OOM the box (config: OPERATOR_*
+# env — see bin/operator-loop). Manual prompts and DRIVE=none stay plain interactive.
+#
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PERSONA=".claude/agents/operator.md"
+[[ -f "$PERSONA" ]] || { echo "{{VENTURE}}: missing persona file $PERSONA" >&2; exit 1; }
+
+args=(
+  --append-system-prompt-file "$PERSONA"
+  --model "${OP_MODEL:-sonnet}"
+  --dangerously-skip-permissions
+  --verbose
+)
+
+[[ "${OP_RESUME:-0}" == "1" ]] && args+=(--continue)
+[[ "${OP_REMOTE:-1}" == "1" ]] && args+=(--remote-control "${OP_REMOTE_NAME:-{{TITLE}} Operator}")
+
+WORK="Continue {{TITLE}} operation."
+DRIVE="${OP_DRIVE:-loop}"
+
+# Standing-driver sessions go through the supervisor (recycles claude before its
+# RSS balloons); the supervisor re-prepends `claude`. Falls back to plain claude
+# if the wrapper is missing or OP_NO_LOOP=1.
+SUPERVISE="bin/operator-loop"
+[[ "${OP_NO_LOOP:-0}" == "1" || ! -x "$SUPERVISE" ]] && SUPERVISE=""
+run() { if [[ -n "$SUPERVISE" ]]; then exec "$SUPERVISE" "$@"; else exec claude "$@"; fi; }
+
+if [[ $# -gt 0 ]]; then
+  exec claude "${args[@]}" "$@"
+elif [[ "$DRIVE" == "loop" ]]; then
+  run "${args[@]}" "/loop ${OP_LOOP_EVERY:+$OP_LOOP_EVERY }/clear $WORK"
+elif [[ "$DRIVE" == "goal" ]]; then
+  run "${args[@]}" "/goal ${OP_GOAL:-$WORK}"
+else
+  exec claude "${args[@]}"
+fi

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# ./holdco — thin shim to the CLI. `bin/holdco` is the real entry point; with no
+# subcommand it boots the autonomous portfolio operator (see `bin/holdco help`).
+exec "$(dirname "$0")/bin/holdco" operate "$@"

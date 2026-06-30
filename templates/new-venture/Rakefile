@@ -1,0 +1,6 @@
+# Standalone Rake — no framework assumptions. Loads every .rake under lib/tasks.
+# lib/tasks/tasks.rake is the one-file-per-task backlog machinery (pure Ruby),
+# shared verbatim with the holdco meta-manager that scaffolded this repo.
+Dir.glob(File.join(__dir__, "lib", "tasks", "*.rake")).sort.each { |f| load f }
+
+task default: %i[]

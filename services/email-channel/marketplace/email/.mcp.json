@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "email": {
+      "command": "bun",
+      "args": ["run", "${CLAUDE_PROJECT_DIR}/services/email-channel/server.ts"],
+      "env": {
+        "EMAIL_CHANNEL_ADDR": "${EMAIL_CHANNEL_ADDR}",
+        "POLL_SECS": "20"
+      }
+    }
+  }
+}

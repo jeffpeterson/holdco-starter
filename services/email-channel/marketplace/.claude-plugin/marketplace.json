@@ -1,0 +1,11 @@
+{
+  "name": "holdco-fleet",
+  "owner": { "name": "holdco" },
+  "plugins": [
+    {
+      "name": "email",
+      "source": "./email",
+      "description": "Email channel for the holdco fleet — pushes inbound internal mail into a running operator session as <channel source=\"email\"> events, plus a two-way email_reply tool."
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# bin/clear-watch-up — idempotently install the cost-based auto-clear watcher as a
+# cron job (one bin/clear-watch tick per minute under flock, ARMED).
+#
+# Replaces the old tmux 'clear-watch' window. Reads the current crontab, strips any
+# prior clear-watch line, appends exactly one entry, and reinstalls — never touching
+# unrelated crontab lines. Safe to run every pass; it's a no-op refresh once present.
+#
+# Disarm without editing crontab: set CLEAR_WATCH_ARM=0 in the environment the cron
+# job sees, or just review ~/.cache/claude-usage/clear-watch.log — it's armed here.
+#
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:${PATH:-}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CRON_BIN="$REPO_ROOT/bin/clear-watch-cron"
+LOG="$HOME/.cache/claude-usage/clear-watch.cron.log"
+ENTRY="* * * * * $CRON_BIN >> $LOG 2>&1"
+
+command -v crontab >/dev/null 2>&1 || { echo "clear-watch-up: crontab not found — install cron first" >&2; exit 1; }
+[ -x "$CRON_BIN" ] || { echo "clear-watch-up: $CRON_BIN missing or not executable" >&2; exit 1; }
+mkdir -p "$(dirname "$LOG")"
+
+# Read the current crontab (empty if none), drop any prior clear-watch line, append ours.
+current="$(crontab -l 2>/dev/null || true)"
+filtered="$(printf '%s' "$current" | grep -vF 'clear-watch-cron' || true)"
+# Preserve all unrelated lines verbatim; only emit the existing block when non-empty.
+{
+	[ -n "$filtered" ] && printf '%s\n' "$filtered"
+	printf '%s\n' "$ENTRY"
+} | crontab -
+
+echo "clear-watch-up: installed cron entry (ARMED):"
+echo "  $ENTRY"

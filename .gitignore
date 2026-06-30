@@ -1,0 +1,23 @@
+# Local scratch
+/tmp/
+*.log
+.DS_Store
+
+# imagegen scratch — generated candidates; ship a chosen one by copying it into tracked assets
+assets/imagegen/
+
+# Dream-cycle cadence marker — local timestamp, not a tracked artifact
+docs/dreams/.last
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+.env
+
+# asks state — content hashes of surfaced operator questions/blockers
+.holdco/
+
+# Wrangler build cache
+services/tasks/.wrangler/

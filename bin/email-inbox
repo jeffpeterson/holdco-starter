@@ -1,0 +1,172 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+#
+# bin/email-inbox — read replies the owner sent to holdco.
+#
+# Pipeline: holdco's outgoing mail (bin/email) carries Reply-To: holdco@<FLEET_EMAIL_DOMAIN>.
+# When the owner replies, Cloudflare Email Routing delivers it to the holdco-inbox
+# Email Worker (services/inbox-worker), which writes the parsed message to a
+# Cloudflare KV namespace. This script reads that namespace.
+#
+# Usage:
+#   bin/email-inbox                    # show unread only
+#   bin/email-inbox --all              # show all (read + unread)
+#   bin/email-inbox --to <addr>        # only mail addressed to <addr> (per-operator inbox)
+#   bin/email-inbox --mark-read <id>   # mark a message read
+#   bin/email-inbox --json             # raw JSON (machine-readable)
+#
+# One Worker + KV namespace backs every fleet address (per-operator rules on
+# the fleet domain): --to filters by recipient so <id>@ each see
+# only their own.
+#
+# Config (from holdco .env, on-server, gitignored):
+#   HOLDCO_CF_ACCOUNT_ID        — Cloudflare account id
+#   HOLDCO_INBOX_KV_NAMESPACE   — KV namespace id (holdco-inbox)
+#   HOLDCO_INBOX_CF_TOKEN       — API token scoped to Workers KV read+write only
+
+require "net/http"
+require "json"
+require "uri"
+require "time"
+
+# --- Config ------------------------------------------------------------------
+
+def env_val(file, name)
+  f = File.expand_path(file)
+  return nil unless File.exist?(f)
+  line = File.readlines(f).find { |l| l.start_with?("#{name}=") }
+  line && line.split("=", 2)[1].strip.gsub(/\A["']|["']\z/, "")
+end
+
+HOLDCO_ENV = File.expand_path("../.env", __dir__)
+
+account = env_val(HOLDCO_ENV, "HOLDCO_CF_ACCOUNT_ID")
+ns      = env_val(HOLDCO_ENV, "HOLDCO_INBOX_KV_NAMESPACE")
+token   = env_val(HOLDCO_ENV, "HOLDCO_INBOX_CF_TOKEN")
+
+abort "bin/email-inbox: HOLDCO_CF_ACCOUNT_ID not set in .env"      unless account
+abort "bin/email-inbox: HOLDCO_INBOX_KV_NAMESPACE not set in .env" unless ns
+abort "bin/email-inbox: HOLDCO_INBOX_CF_TOKEN not set in .env"     unless token
+
+# --- CLI flags ---------------------------------------------------------------
+
+show_all    = ARGV.include?("--all")
+json_output = ARGV.include?("--json")
+mark_id     = (i = ARGV.index("--mark-read")) && ARGV[i + 1]
+only_to     = (j = ARGV.index("--to")) && ARGV[j + 1]&.downcase
+
+# --- Cloudflare KV helpers ---------------------------------------------------
+
+BASE = "https://api.cloudflare.com/client/v4"
+
+def cf_request(method, path, token, body: nil, raw: false)
+  uri  = URI("#{BASE}#{path}")
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  klass = { "GET" => Net::HTTP::Get, "PUT" => Net::HTTP::Put, "DELETE" => Net::HTTP::Delete }[method]
+  req = klass.new(uri)
+  req["Authorization"] = "Bearer #{token}"
+  if body
+    req["Content-Type"] = raw ? "text/plain" : "application/json"
+    req.body = raw ? body : JSON.dump(body)
+  end
+  http.request(req)
+end
+
+def kv_list_keys(account, ns, token)
+  keys = []
+  cursor = nil
+  loop do
+    q = "?prefix=msg:&limit=1000"
+    q += "&cursor=#{URI.encode_www_form_component(cursor)}" if cursor && !cursor.empty?
+    res = cf_request("GET", "/accounts/#{account}/storage/kv/namespaces/#{ns}/keys#{q}", token)
+    abort "bin/email-inbox: KV list failed #{res.code}: #{res.body}" unless res.code.to_i == 200
+    data = JSON.parse(res.body)
+    keys.concat(data["result"].map { |k| k["name"] })
+    cursor = data.dig("result_info", "cursor")
+    break if cursor.nil? || cursor.empty?
+  end
+  keys.sort # keys are msg:<epoch_ms>:<id> — lexical sort == chronological
+end
+
+def kv_get(account, ns, token, key)
+  res = cf_request("GET", "/accounts/#{account}/storage/kv/namespaces/#{ns}/values/#{URI.encode_www_form_component(key)}", token)
+  return nil unless res.code.to_i == 200
+  JSON.parse(res.body) rescue nil
+end
+
+def kv_put(account, ns, token, key, value_hash)
+  res = cf_request("PUT", "/accounts/#{account}/storage/kv/namespaces/#{ns}/values/#{URI.encode_www_form_component(key)}",
+                   token, body: JSON.dump(value_hash), raw: true)
+  abort "bin/email-inbox: KV write failed #{res.code}: #{res.body}" unless res.code.to_i == 200
+end
+
+# Flood protection: only hydrate the most-recent `limit` messages per scope.
+# Keys sort chronologically, so `last(limit)` is the newest. A flood can't make
+# every pass GET the entire history; unread mail still drains because each pass
+# marks what it delivers read, exposing the next batch.
+#
+# When --to is given, the limit is applied AFTER the recipient filter so an
+# individual operator always sees its own last-N regardless of fleet volume.
+# When --to is absent the limit is applied fleet-wide (global view).
+RECENT_LIMIT = 50
+
+def load_messages(account, ns, token, only_to: nil, limit: RECENT_LIMIT)
+  keys = kv_list_keys(account, ns, token)
+  # If filtering by recipient, apply the limit per-operator (after filtering).
+  # Otherwise apply the global limit now to cap the KV fetch count.
+  keys = keys.last(limit) unless only_to
+  messages = keys.filter_map do |key|
+    msg = kv_get(account, ns, token, key)
+    msg && msg.merge("_key" => key)
+  end
+  if only_to
+    messages = messages.select { |m| m["to"].to_s.downcase.include?(only_to) }
+    messages = messages.last(limit) if limit
+  end
+  messages
+end
+
+# --- Mark read ---------------------------------------------------------------
+
+if mark_id
+  # `id` is the KV key itself (set by the Worker), so mark-read is a direct
+  # get/put — no full-inbox scan, and never ambiguous across colliding Message-IDs.
+  target = kv_get(account, ns, token, mark_id)
+  abort "bin/email-inbox: no message with id #{mark_id}" unless target
+  target["read"] = true
+  kv_put(account, ns, token, mark_id, target)
+  puts "marked #{mark_id} as read"
+  exit 0
+end
+
+# --- Fetch and display -------------------------------------------------------
+
+messages = load_messages(account, ns, token, only_to: only_to)
+shown    = show_all ? messages : messages.reject { |m| m["read"] }
+
+if json_output
+  puts JSON.pretty_generate(shown.map { |m| m.reject { |k, _| k == "_key" } })
+  exit 0
+end
+
+if shown.empty?
+  puts show_all ? "inbox empty" : "no unread replies  (bin/email-inbox --all to see everything)"
+  exit 0
+end
+
+label = show_all ? "all" : "unread"
+puts "#{shown.size} #{label} #{shown.size == 1 ? 'reply' : 'replies'}\n\n"
+
+shown.each do |m|
+  ts   = (Time.parse(m["received_at"]).localtime rescue m["received_at"])
+  flag = m["read"] ? " [read]" : " [unread]"
+  puts "── #{ts}#{flag}"
+  puts "   from:    #{m['from']}"
+  puts "   subject: #{m['subject']}"
+  puts "   id:      #{m['id']}"
+  snippet = (m["text"] || "").gsub(/\s+/, " ").strip[0, 240]
+  puts "   #{snippet}" unless snippet.empty?
+  puts
+end
+puts "mark read: bin/email-inbox --mark-read <id>"

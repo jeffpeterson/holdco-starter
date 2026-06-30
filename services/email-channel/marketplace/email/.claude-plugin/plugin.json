@@ -1,0 +1,6 @@
+{
+  "name": "email",
+  "version": "0.1.0",
+  "description": "Email channel for the holdco fleet — inbound internal mail as in-session <channel source=\"email\"> events + email_reply tool. Binds to one inbox per operator via EMAIL_CHANNEL_ADDR.",
+  "keywords": ["email", "channel", "mcp", "holdco", "fleet"]
+}

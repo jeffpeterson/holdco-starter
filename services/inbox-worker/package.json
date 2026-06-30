@@ -1,0 +1,16 @@
+{
+  "name": "holdco-inbox-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Email Worker — writes inbound fleet mail (<id>@bot.example.com) to a bound KV namespace, keyed by message.to. No secrets in the Worker.",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^3"
+  }
+}

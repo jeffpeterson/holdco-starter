@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+#
+# bin/usage-statusline — the fleet usage HARVESTER (a Claude Code statusLine command).
+#
+# Claude Code runs this on every render and pipes the session JSON on stdin. We
+# pull out the plan-cap usage (rate_limits.five_hour / seven_day) plus this
+# session's model, context %, and cost, and append them to a PER-SESSION cache
+# file keyed by the cwd basename (e.g. ~/.cache/claude-usage/usage.holdco). Then
+# we print a compact one-line status to the pane.
+#
+# Why per-session (one file per cwd), not the single shared file the upstream
+# tmux-claude-usage plugin uses: every session would clobber that one file on its
+# next render, so the fleet view would collapse to last-render-wins. Keying by
+# cwd basename gives one cache per venture/holdco, and `bin/holdco tokens` then
+# takes the MAX 7-day % across them — the freshest account-wide reading, robust
+# to any one session being idle.
+#
+# IMPORTANT: rate_limits is null until a session makes its first API call, so a
+# brand-new session harvests context/cost immediately but the cap % only appears
+# after it does real work (we preserve the last good cap values across such
+# renders so the cache never blanks them).
+#
+# Deps: jq + bash only. No jq -> we print a minimal line and skip harvesting.
+
+set -uo pipefail
+
+CACHE_DIR="$HOME/.cache/claude-usage"
+# Prompt-cache TTL: the warm-cache window is a 300s sliding timer reset on each
+# turn. Bump to 3600 if we ever adopt the 1h extended-TTL cache.
+CACHE_TTL_SECONDS=300
+now="$(date +%s)"
+
+input="$(cat)"
+
+# Resolve jq even from a GUI/cron-spawned Claude whose PATH lacks Homebrew etc.
+JQ="$(command -v jq 2>/dev/null || true)"
+if [ -z "$JQ" ]; then
+	for d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin /home/linuxbrew/.linuxbrew/bin; do
+		[ -x "$d/jq" ] && { JQ="$d/jq"; break; }
+	done
+fi
+# No jq: can't parse JSON. Stay silent rather than print a broken line.
+[ -n "$JQ" ] || exit 0
+
+# Pull every field we care about in one jq pass as KEY=VALUE lines.
+data="$(printf '%s' "$input" | "$JQ" -r '
+	.rate_limits as $r
+	| "CWD=\(.cwd // "")",
+	  "SESSION_ID=\(.session_id // "")",
+	  "TRANSCRIPT=\(.transcript_path // "")",
+	  "MODEL=\(.model.display_name // "")",
+	  "CTX_PCT=\(.context_window.used_percentage // "")",
+	  "COST_USD=\(.cost.total_cost_usd // "")",
+	  "FIVE_HOUR_PCT=\($r.five_hour.used_percentage // "")",
+	  "FIVE_HOUR_RESET=\($r.five_hour.resets_at // "")",
+	  "SEVEN_DAY_PCT=\($r.seven_day.used_percentage // "")",
+	  "SEVEN_DAY_RESET=\($r.seven_day.resets_at // "")"
+' 2>/dev/null)" || exit 0
+
+val() { printf '%s\n' "$data" | sed -n "s/^$1=//p"; }
+
+cwd="$(val CWD)"; [ -n "$cwd" ] || cwd="$PWD"
+label="$(basename "$cwd")"
+# Sanitize to a safe filename (keeps the venture/holdco name readable).
+label="$(printf '%s' "$label" | tr -c 'A-Za-z0-9._-' '_')"
+[ -n "$label" ] || label="unknown"
+CACHE_FILE="$CACHE_DIR/usage.$label"
+
+model="$(val MODEL)"
+ctx="$(val CTX_PCT)"
+cost="$(val COST_USD)"
+five_pct="$(val FIVE_HOUR_PCT)"
+five_reset="$(val FIVE_HOUR_RESET)"
+seven_pct="$(val SEVEN_DAY_PCT)"
+seven_reset="$(val SEVEN_DAY_RESET)"
+
+# The real tokens-in-context + warm-cache ratio aren't in the stdin payload —
+# they live in the transcript JSONL. The latest non-sidechain assistant turn's
+# .message.usage gives input_tokens / cache_read_input_tokens /
+# cache_creation_input_tokens; their sum is the tokens actually fed to the model
+# (the live context size), and cache_read / sum is the warm-cache hit ratio.
+# Tail the file (the last assistant turn is near the end) so we don't read a
+# multi-MB transcript whole on every render.
+transcript="$(val TRANSCRIPT)"
+ctx_tokens="" cache_pct="" send_cost="" last_turn_ts=""
+if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+	# Emit "<total_tokens> <cache_read> <price-weighted input units> <iso_ts>". The
+	# weighted units price warm/cold/write at their real multipliers (read 0.1×,
+	# write 1.25×, fresh input 1×) so the send-cost is exact, not a rough estimate.
+	# The ISO timestamp is the turn's wall-clock — its age drives cache freshness.
+	usage="$(tail -n 400 "$transcript" 2>/dev/null | tac | "$JQ" -rc '
+		select(.type == "assistant" and (.isSidechain | not) and (.message.usage != null))
+		| .timestamp as $ts
+		| .message.usage
+		| (.input_tokens // 0) as $in
+		| (.cache_read_input_tokens // 0) as $rd
+		| (.cache_creation_input_tokens // 0) as $cw
+		| ($in + $rd + $cw) as $tot
+		| select($tot > 0)
+		| "\($tot) \($rd) \($in + $rd * 0.1 + $cw * 1.25) \($ts // "")"' 2>/dev/null | head -1)"
+	if [ -n "$usage" ]; then
+		read -r ctx_tokens read_tok weighted_in ts_iso <<<"$usage"
+		# ISO-8601 (e.g. 2026-06-27T06:44:39.949Z) -> epoch for idle/TTL math.
+		[ -n "${ts_iso:-}" ] && last_turn_ts="$(date -d "$ts_iso" +%s 2>/dev/null || true)"
+		cache_pct="$(awk -v r="$read_tok" -v t="$ctx_tokens" \
+			'BEGIN { if (t > 0) printf "%.0f", r * 100 / t }')"
+		# Input $/token by model family (single source of truth). Public API rates;
+		# on a subscription plan this is an equivalent-cost ESTIMATE, not a bill.
+		price="0.000005" # Opus / unknown fallback ($5 /1M)
+		case "$(printf '%s' "$model" | tr '[:upper:]' '[:lower:]')" in
+		*sonnet*) price="0.000003" ;; # $3 /1M
+		*haiku*)  price="0.000001" ;; # $1 /1M
+		esac
+		send_cost="$(awk -v w="$weighted_in" -v p="$price" 'BEGIN { printf "%.2f", w * p }')"
+	fi
+fi
+
+# Preserve the last good cap values when this render has no rate_limits (null on
+# a fresh session, or transient): never blank a known-good 5h/7d reading.
+prior() { sed -n "s/^$1=//p" "$CACHE_FILE" 2>/dev/null; }
+if [ -f "$CACHE_FILE" ]; then
+	[ -n "$five_pct" ]    || five_pct="$(prior FIVE_HOUR_PCT)"
+	[ -n "$five_reset" ]  || five_reset="$(prior FIVE_HOUR_RESET)"
+	[ -n "$seven_pct" ]   || seven_pct="$(prior SEVEN_DAY_PCT)"
+	[ -n "$seven_reset" ] || seven_reset="$(prior SEVEN_DAY_RESET)"
+	# Same robustness for the transcript-derived numbers: a render that lands
+	# without a fresh usage block (no assistant turn yet) keeps the last good.
+	[ -n "$ctx_tokens" ]   || ctx_tokens="$(prior CTX_TOKENS)"
+	[ -n "$cache_pct" ]    || cache_pct="$(prior CACHE_PCT)"
+	[ -n "$send_cost" ]    || send_cost="$(prior SEND_COST)"
+	[ -n "$last_turn_ts" ] || last_turn_ts="$(prior LAST_TURN_TS)"
+fi
+
+# Write the cache atomically (latest render for this label wins). One writer per
+# cwd in practice, so no clobber war; the fleet-level MAX in `bin/holdco tokens`
+# is the real robustness layer.
+mkdir -p "$CACHE_DIR" 2>/dev/null
+{
+	printf 'LABEL=%s\n' "$label"
+	printf 'SESSION_ID=%s\n' "$(val SESSION_ID)"
+	printf 'CWD=%s\n' "$cwd"
+	printf 'MODEL=%s\n' "$model"
+	printf 'CTX_PCT=%s\n' "$ctx"
+	printf 'COST_USD=%s\n' "$cost"
+	printf 'FIVE_HOUR_PCT=%s\n' "$five_pct"
+	printf 'FIVE_HOUR_RESET=%s\n' "$five_reset"
+	printf 'SEVEN_DAY_PCT=%s\n' "$seven_pct"
+	printf 'SEVEN_DAY_RESET=%s\n' "$seven_reset"
+	printf 'CTX_TOKENS=%s\n' "$ctx_tokens"
+	printf 'CACHE_PCT=%s\n' "$cache_pct"
+	printf 'SEND_COST=%s\n' "$send_cost"
+	printf 'LAST_TURN_TS=%s\n' "$last_turn_ts"
+	printf 'UPDATED_AT=%s\n' "$now"
+} >"$CACHE_FILE.tmp.$$" 2>/dev/null && mv "$CACHE_FILE.tmp.$$" "$CACHE_FILE" 2>/dev/null
+
+# ---- render the pane footer -------------------------------------------------
+#
+# Three logical clusters, divided by a dimmed " │ ":
+#   <model>  │  <Nk ctx> · <NN% cached> · ~$<send-cost>  │  5h NN% · 7d NN%
+# Color carries health, not decoration: cache% is GREEN warm / YELLOW <50 / RED
+# <20 (low cache = expensive cold reads); caps are GREEN low / YELLOW ≥70 / RED
+# ≥90 (the bin/holdco-tokens convention). Model + dividers are dimmed. ANSI is
+# suppressed under NO_COLOR so the line degrades to plain text.
+if [ -n "${NO_COLOR:-}" ]; then
+	DIM="" GRN="" YLW="" RED="" RST=""
+else
+	DIM=$'\e[2m' GRN=$'\e[32m' YLW=$'\e[33m' RED=$'\e[31m' RST=$'\e[0m'
+fi
+
+iround() { printf '%.0f' "$1" 2>/dev/null || printf '%s' "$1"; }
+# Compact token count: 638718 -> "639k", 950 -> "950".
+fmt_k() {
+	local n="$1"
+	if [ "$n" -ge 1000 ] 2>/dev/null; then printf '%dk' $(((n + 500) / 1000)); else printf '%s' "$n"; fi
+}
+# Color a cap % by the high-is-bad thresholds (matches bin/holdco-tokens).
+cap_color() {
+	local p; p="$(iround "$1")"
+	if [ "$p" -ge 90 ] 2>/dev/null; then printf '%s' "$RED"
+	elif [ "$p" -ge 70 ] 2>/dev/null; then printf '%s' "$YLW"
+	else printf '%s' "$GRN"; fi
+}
+
+# Group 1: model (dimmed — static, least urgent).
+g1=""
+[ -n "$model" ] && g1="${DIM}${model}${RST}"
+
+# Group 2: context size + cache hit %.
+g2_parts=()
+if [ -n "$ctx_tokens" ]; then
+	# Large context is a soft "/clear" nudge — yellow past ~120k.
+	ctx_color=""
+	[ "$ctx_tokens" -ge 120000 ] 2>/dev/null && ctx_color="$YLW"
+	g2_parts+=("${ctx_color}$(fmt_k "$ctx_tokens") ctx${RST}")
+fi
+if [ -n "$cache_pct" ]; then
+	cc="$GRN"
+	[ "$cache_pct" -lt 50 ] 2>/dev/null && cc="$YLW"
+	[ "$cache_pct" -lt 20 ] 2>/dev/null && cc="$RED"
+	g2_parts+=("${cc}${cache_pct}% cached${RST}")
+fi
+# Cache-freshness window: whether the warm prompt cache is STILL ALIVE for the
+# NEXT message. We show the ABSOLUTE clock time the 300s TTL expires (e.g.
+# →2:34p), not a countdown, BECAUSE Claude Code re-runs this statusLine only on
+# conversation activity — NOT on an idle timer (empirically: idle sessions'
+# renders freeze for 20+ min). A countdown would freeze mid-tick and lie; an
+# absolute time stays correct on a stale paint — the owner reads it against the
+# wall clock. Green warm / red cold once past expiry.
+if [ -n "$last_turn_ts" ]; then
+	idle=$((now - last_turn_ts))
+	if [ "$idle" -lt "$CACHE_TTL_SECONDS" ] 2>/dev/null; then
+		expiry="$(date -d "@$((last_turn_ts + CACHE_TTL_SECONDS))" '+%-I:%M%P' 2>/dev/null)"
+		g2_parts+=("${GRN}→${expiry%m}${RST}") # strip the trailing m: 2:34pm -> 2:34p
+	else
+		g2_parts+=("${RED}cold${RST}")
+	fi
+fi
+# Per-turn input/context send-cost — informational, kept dim (cache% already
+# carries the health signal, so don't double-encode it with color).
+[ -n "$send_cost" ] && g2_parts+=("${DIM}~\$${send_cost}${RST}")
+# Cumulative session $ spend — dim and distinct from the per-turn send-cost (no
+# leading ~). `~$0.05` is THIS turn; `$1.23` is the whole session so far.
+[ -n "$cost" ] && g2_parts+=("${DIM}\$$(printf '%.2f' "$cost" 2>/dev/null)${RST}")
+g2=""
+((${#g2_parts[@]})) && { g2="${g2_parts[0]}"; for ((i = 1; i < ${#g2_parts[@]}; i++)); do g2+=" ${DIM}·${RST} ${g2_parts[$i]}"; done; }
+
+# Group 3: rate caps (5h / 7d).
+g3_parts=()
+[ -n "$five_pct" ]  && g3_parts+=("${DIM}5h${RST} $(cap_color "$five_pct")$(iround "$five_pct")%${RST}")
+# 7d shows used%/elapsed% so the owner reads burn against pace at a glance: 82%
+# used vs only 69% through the window = running hot. Elapsed comes from the reset
+# epoch over the 604800s window; if the reset isn't numeric, fall back to used%.
+if [ -n "$seven_pct" ]; then
+	seven_seg="$(cap_color "$seven_pct")$(iround "$seven_pct")%${RST}"
+	if [[ "$seven_reset" =~ ^[0-9]+$ ]]; then
+		seven_elapsed="$(awk -v reset="$seven_reset" -v now="$now" 'BEGIN {
+			e = (1 - (reset - now) / 604800) * 100
+			if (e < 0) e = 0; if (e > 100) e = 100
+			printf "%.0f", e }')"
+		seven_seg="${seven_seg}${DIM}/${seven_elapsed}%${RST}"
+	fi
+	g3_parts+=("${DIM}7d${RST} ${seven_seg}")
+fi
+g3=""
+((${#g3_parts[@]})) && { g3="${g3_parts[0]}"; for ((i = 1; i < ${#g3_parts[@]}; i++)); do g3+=" ${DIM}·${RST} ${g3_parts[$i]}"; done; }
+
+# Join the non-empty groups with a dimmed box divider.
+sep=" ${DIM}│${RST} "
+out=""
+for g in "$g1" "$g2" "$g3"; do
+	[ -n "$g" ] || continue
+	if [ -z "$out" ]; then out="$g"; else out+="${sep}${g}"; fi
+done
+[ -n "$out" ] && printf '%s' "$out"
+exit 0

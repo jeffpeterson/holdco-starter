@@ -1,0 +1,20 @@
+# Local scratch
+/tmp/
+*.log
+.DS_Store
+
+# imagegen scratch — generated candidates; ship a chosen one by copying it into tracked assets
+assets/imagegen/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Dream-cycle cadence marker — local timestamp, not a tracked artifact
+docs/dreams/.last
+
+# Editor
+.idea/
+.vscode/
+*.swp

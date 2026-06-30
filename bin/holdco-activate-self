@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#
+# bin/holdco-activate-self — DETACHED, self-verifying flip that activates holdco's
+# OWN email channel by recreating the live HoldCo supervisor window so it relaunches
+# on the channel-wired `bin/holdco operate` (--channels plugin:email@holdco-fleet,
+# EMAIL_CHANNEL_ADDR=holdco@<FLEET_EMAIL_DOMAIN>).
+#
+# WHY DETACHED: recreating the window KILLS the session (and the owner's view) that
+# the window is running. So the OUTGOING holdco session must launch this script
+# DETACHED, as its final action, so the flip OUTLIVES the window it kills:
+#
+#     setsid nohup "$REPO_ROOT/bin/holdco-activate-self" \
+#       >> "$REPO_ROOT/logs/holdco-activate.log" 2>&1 < /dev/null &
+#
+# setsid puts it in its own session/process-group so `tmux kill-window` (which kills
+# the pane's process group) does NOT take it down.
+#
+# SELF-HEAL: the portfolio must NEVER be left without a supervisor. If the channel-
+# wired relaunch does not produce a live claude, this falls back to a channel-LESS
+# supervisor (a running supervisor beats a dead one) and emails the owner. A failure
+# to bring up ANY window also emails the owner.
+#
+# Idempotent enough to re-run: it only ever ensures exactly one HoldCo window.
+set -uo pipefail
+
+# Findable from a minimal detached env (same PATH as bin/holdco-up).
+export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:${PATH:-}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SESSION="${HOLDCO_TMUX_SESSION:-holdco}"
+WINDOW="HoldCo"
+TARGET="$SESSION:$WINDOW"
+LOG="$REPO_ROOT/logs/holdco-activate.log"
+
+RENDER_GRACE=${RENDER_GRACE:-12}   # let the outgoing session render its last message
+HEAL_GRACE=${HEAL_GRACE:-120}      # seconds to wait for a live channel-wired claude
+
+log() { printf '%s  %s\n' "$(date -Is)" "$*" >> "$LOG"; }
+
+window_exists() {
+  tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qFx "$WINDOW"
+}
+
+# A live claude for the RECREATED session — launched by operate() as
+# `claude … --remote-control "HoldCo Operator" … --channels plugin:email@holdco-fleet`.
+# The "HoldCo Operator" remote name cleanly distinguishes it from the OUTGOING window
+# (which used `--remote-control holdco` and no --channels). Match the claude binary
+# line specifically (operator-loop is a `bash …` line, excluded).
+holdco_claude_alive() {
+  pgrep -af 'HoldCo Operator' 2>/dev/null | grep -Eq '^[0-9]+ claude '
+}
+
+# Best-effort: did the email channel register for this session? (non-fatal)
+channel_registered() {
+  # (a) a bun email-channel server bound to holdco@ via its env, or
+  for p in $(pgrep -f 'email-channel/server' 2>/dev/null); do
+    tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -q '^EMAIL_CHANNEL_ADDR=holdco@' && return 0
+  done
+  # (b) the registration line in the new window's --verbose output.
+  tmux capture-pane -t "$TARGET" -p -S -3000 2>/dev/null | grep -q 'Channel notifications registered'
+}
+
+log "=== activation start (pid $$) — render grace ${RENDER_GRACE}s ==="
+sleep "$RENDER_GRACE"
+
+# 1) Kill the live HoldCo window (ends the outgoing holdco/owner session).
+if window_exists; then
+  log "killing window $TARGET"
+  tmux kill-window -t "$TARGET" 2>>"$LOG" || log "WARN kill-window returned non-zero"
+else
+  log "window $TARGET not present before kill (already gone?)"
+fi
+sleep 1
+
+# 2) Recreate on the wired command via the canonical supervisor entrypoint.
+#    bin/holdco-up re-execs `bin/holdco operate`, which carries --channels.
+log "recreating via bin/holdco-up (wired: bin/holdco operate --channels plugin:email@holdco-fleet)"
+"$REPO_ROOT/bin/holdco-up" >>"$LOG" 2>&1 || log "WARN holdco-up returned non-zero"
+
+# 3) Verify a live channel-wired claude actually came up (operator-loop may still be
+#    spawning claude — poll up to HEAL_GRACE).
+ok=0
+for _ in $(seq 1 "$HEAL_GRACE"); do
+  if holdco_claude_alive; then ok=1; break; fi
+  sleep 1
+done
+
+if [ "$ok" = 1 ]; then
+  log "OK — channel-wired HoldCo claude is up"
+  if channel_registered; then
+    log "channel: email channel registered for holdco@<FLEET_EMAIL_DOMAIN>"
+    note="and its email channel registered (holdco@ inbox)"
+  else
+    log "channel: registration not yet confirmed (non-fatal — verify on next pass)"
+    note="(channel registration not yet confirmed in the verify window — check logs/holdco-activate.log next pass)"
+  fi
+  "$REPO_ROOT/bin/email" "holdco: email channel activated" \
+    "The HoldCo supervisor window was recreated on the channel-wired launch (--channels plugin:email@holdco-fleet) and a live operator came up ${note}. Record the new holdco session id in SESSIONS.md on the next pass. Log: ${LOG}" \
+    >>"$LOG" 2>&1 || log "WARN success email failed"
+  log "=== activation done OK ==="
+  exit 0
+fi
+
+# 4) SELF-HEAL: no live channel-wired claude. Bring up a channel-LESS supervisor so
+#    the fleet is never unsupervised, and alert the owner.
+log "SELF-HEAL — no live claude after ${HEAL_GRACE}s; launching channel-less supervisor"
+window_exists && { log "tearing down half-up window $TARGET"; tmux kill-window -t "$TARGET" 2>>"$LOG"; sleep 1; }
+
+# Replicate operate()'s launch MINUS --channels, with EMAIL_CHANNEL_ADDR unset so the
+# email plugin server exits harmlessly (process.exit on missing addr) instead of
+# polling+marking-read and silently eating mail. Degraded mode: send-keys cron still
+# delivers operator mail; holdco reads its own inbox via bin/email-inbox.
+FALLBACK="exec env -u EMAIL_CHANNEL_ADDR '$REPO_ROOT/bin/operator-loop' \
+--append-system-prompt-file .claude/agents/holdco.md \
+--model "${HOLDCO_MODEL:-sonnet}" --dangerously-skip-permissions --verbose \
+--remote-control 'HoldCo Operator' '/loop /clear Continue portfolio operation.'"
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  tmux new-window -d -t "$SESSION" -n "$WINDOW" -c "$REPO_ROOT" "$FALLBACK" >>"$LOG" 2>&1 \
+    || log "WARN fallback new-window returned non-zero"
+else
+  tmux new-session -d -s "$SESSION" -n "$WINDOW" -c "$REPO_ROOT" "$FALLBACK" >>"$LOG" 2>&1 \
+    || log "WARN fallback new-session returned non-zero"
+fi
+tmux set-window-option -t "$TARGET" automatic-rename off 2>/dev/null || true
+# Clean tab: drop the cwd prefix from the owner's GLOBAL format (per-window override only).
+tmux set-window-option -t "$TARGET" window-status-format ' #W#{?window_bell_flag, !,} ' 2>/dev/null || true
+tmux set-window-option -t "$TARGET" window-status-current-format ' #W#{?window_bell_flag, !,} ' 2>/dev/null || true
+
+sleep 8
+if window_exists; then
+  log "self-heal: channel-less HoldCo supervisor window is up"
+  state="restored WITHOUT the email channel (DEGRADED — send-keys mail still works; re-attempt activation next pass)"
+  rc=0
+else
+  log "self-heal: FAILED to bring up any HoldCo window"
+  state="FAILED — NO HoldCo window is running; MANUAL INTERVENTION NEEDED: run bin/holdco-up on the box"
+  rc=1
+fi
+"$REPO_ROOT/bin/email" "holdco ALERT: email-channel activation failed" \
+  "Activating holdco's email channel by recreating its window did NOT produce a live channel-wired supervisor. Outcome: ${state}. Logfile on the box: ${LOG}" \
+  >>"$LOG" 2>&1 || log "WARN alert email failed"
+log "=== activation done (self-heal path, rc=${rc}) ==="
+exit "$rc"

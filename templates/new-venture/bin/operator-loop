@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+#
+# operator-loop — supervise a long-running `claude` operator so its OS process
+# memory is reclaimed before it can balloon and OOM the box.
+#
+# WHY: every operator (and holdco itself) runs as `claude … /loop /clear …`.
+# `/loop /clear` resets the CONTEXT WINDOW each pass but NOT the process RSS,
+# which creeps up over hours/days — one recently ballooned to ~22GB and locked
+# the owner out of SSH. This wrapper is the PROACTIVE, graceful layer that
+# recycles a session before it gets there (earlyoom is the last-resort backstop).
+#
+# HOW: claude is run as a child in a restart loop. A lightweight watchdog polls
+# the claude process subtree's RSS and recycles (graceful SIGTERM → SIGKILL) when
+# it crosses a cap or outlives a max lifetime. When claude exits — by recycle,
+# crash, or otherwise — it is relaunched with --continue, which resumes the SAME
+# session thread (so SESSIONS.md links + the remote-control conversation stay
+# valid and the operator's loop is unbroken). The relaunch is a fresh OS process,
+# so the leaked RSS is reclaimed; --continue merely rehydrates the conversation.
+#
+# OFF-SWITCH: this wrapper relaunches on any exit (that's the point — crash
+# resilience). To take an operator offline, kill its tmux WINDOW (e.g.
+# `bin/holdco shutter <id>` or `tmux kill-window`), which kills the wrapper too.
+#
+# USAGE: operator-loop <claude-arg>...
+#   The args are everything AFTER `claude` (flags + opening prompt). They are
+#   passed verbatim on the first launch; restarts prepend --continue.
+#
+# CONFIG (env, all overridable):
+#   OPERATOR_RSS_MAX_MB    recycle when the claude subtree RSS exceeds this MB   (default 3000)
+#   OPERATOR_MAX_LIFETIME  recycle after this long regardless, e.g. 4h/90m/3600 (default 4h)
+#   OPERATOR_GRACE_SECS    SIGTERM→SIGKILL grace window on recycle              (default 120)
+#   OPERATOR_POLL_SECS     watchdog poll interval                              (default 30)
+#   OPERATOR_NO_RECYCLE    set to 1 to disable the watchdog (restart-on-exit only)
+#
+# NOTE: no `set -e` — claude exiting non-zero (SIGTERM/SIGINT/crash) is the
+# NORMAL case here and must not abort the supervisor.
+set -uo pipefail
+
+RSS_MAX_MB=${OPERATOR_RSS_MAX_MB:-3000}
+GRACE_SECS=${OPERATOR_GRACE_SECS:-120}
+POLL_SECS=${OPERATOR_POLL_SECS:-30}
+MIN_UPTIME=60            # exits faster than this count as crashes
+MAX_CRASHES=5            # consecutive rapid crashes before the wrapper gives up
+
+# Parse a duration like "4h" / "90m" / "3600" into seconds.
+to_secs() {
+  local d=${1:-0}
+  case "$d" in
+    *h) echo $(( ${d%h} * 3600 )) ;;
+    *m) echo $(( ${d%m} * 60 )) ;;
+    *s) echo "${d%s}" ;;
+    *)  echo "$d" ;;
+  esac
+}
+MAX_LIFETIME=$(to_secs "${OPERATOR_MAX_LIFETIME:-4h}")
+
+log() { echo "operator-loop: $*" >&2; }
+
+# All descendant PIDs of a process (depth-first).
+descendants() {
+  local p child
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    echo "$child"
+    descendants "$child"
+  done
+}
+
+# Summed RSS (MB) of a process and its whole subtree.
+subtree_rss_mb() {
+  local root=$1 total=0 p r
+  for p in "$root" $(descendants "$root"); do
+    r=$(ps -o rss= -p "$p" 2>/dev/null | tr -d ' ')
+    [[ -n $r ]] && total=$(( total + r ))
+  done
+  echo $(( total / 1024 ))
+}
+
+# Watchdog: recycle claude when it exceeds the RSS cap or the lifetime cap.
+# Discovers the claude child of the wrapper (claude runs in the FOREGROUND so it
+# keeps the pane TTY — backgrounding it would send stdin to /dev/null and break
+# `tmux attach` steering). On trigger it touches the recycle-flag (so the parent
+# knows the exit was intentional) then escalates SIGTERM → SIGKILL.
+watchdog() {
+  local wrapper_pid=$1 self=$BASHPID cpid="" start now rss reason waited tries=0
+  # claude is the wrapper's only direct child other than this watchdog subshell,
+  # so identify it by exclusion — robust to however claude names its process.
+  while [[ -z $cpid ]] && (( tries < 60 )); do
+    cpid=$(pgrep -P "$wrapper_pid" 2>/dev/null | grep -vx "$self" | head -1)
+    [[ -n $cpid ]] && break
+    sleep 1; tries=$(( tries + 1 ))
+  done
+  [[ -z $cpid ]] && return
+  start=$(date +%s)
+  while kill -0 "$cpid" 2>/dev/null; do
+    sleep "$POLL_SECS"
+    kill -0 "$cpid" 2>/dev/null || break
+    now=$(date +%s)
+    rss=$(subtree_rss_mb "$cpid")
+    reason=""
+    if (( RSS_MAX_MB > 0 && rss > RSS_MAX_MB )); then
+      reason="RSS ${rss}MB > ${RSS_MAX_MB}MB cap"
+    elif (( MAX_LIFETIME > 0 && now - start > MAX_LIFETIME )); then
+      reason="lifetime $(( now - start ))s > ${MAX_LIFETIME}s cap"
+    fi
+    [[ -z $reason ]] && continue
+
+    log "recycling (${reason}) — SIGTERM, ${GRACE_SECS}s grace"
+    : > "$RECYCLE_FLAG"
+    kill -TERM "$cpid" 2>/dev/null
+    waited=0
+    while kill -0 "$cpid" 2>/dev/null && (( waited < GRACE_SECS )); do
+      sleep 2; waited=$(( waited + 2 ))
+    done
+    if kill -0 "$cpid" 2>/dev/null; then
+      log "grace elapsed — SIGKILL"
+      kill -KILL "$cpid" 2>/dev/null
+    fi
+    return
+  done
+}
+
+# --- supervise ---------------------------------------------------------------
+
+RECYCLE_FLAG=$(mktemp -t operator-loop.recycle.XXXXXX)
+WATCH_PID=""
+
+cleanup() {
+  pkill -P $$ 2>/dev/null   # reap claude + watchdog children on teardown
+  rm -f "$RECYCLE_FLAG"
+}
+trap cleanup EXIT
+trap 'exit 143' TERM HUP INT   # tmux window killed → cleanup runs via EXIT trap
+
+crashes=0
+first=1
+while true; do
+  rm -f "$RECYCLE_FLAG"
+
+  WATCH_PID=""
+  if [[ "${OPERATOR_NO_RECYCLE:-0}" != "1" ]]; then
+    watchdog "$$" &          # discovers the foreground claude child by PID
+    WATCH_PID=$!
+  fi
+
+  # claude runs in the FOREGROUND so it inherits the pane TTY (stdin/out) — essential
+  # for the TUI and `tmux attach` steering. --continue resumes the same session thread.
+  started=$(date +%s)
+  if (( first )); then
+    claude "$@"
+    first=0
+  else
+    claude --continue "$@"
+  fi
+  status=$?
+  ended=$(date +%s)
+
+  [[ -n $WATCH_PID ]] && { kill "$WATCH_PID" 2>/dev/null; wait "$WATCH_PID" 2>/dev/null; }
+  WATCH_PID=""
+
+  if [[ -e $RECYCLE_FLAG ]]; then
+    crashes=0
+    log "recycled — relaunching (resume)"
+    continue
+  fi
+
+  uptime=$(( ended - started ))
+  if (( uptime < MIN_UPTIME )); then
+    crashes=$(( crashes + 1 ))
+    if (( crashes >= MAX_CRASHES )); then
+      log "claude exited (status $status) after ${uptime}s — $crashes rapid exits in a row, giving up"
+      exit "$status"
+    fi
+    backoff=$(( crashes * 5 ))
+    log "claude exited (status $status) after ${uptime}s — relaunch #$crashes in ${backoff}s"
+    sleep "$backoff"
+  else
+    crashes=0
+    log "claude exited (status $status) after ${uptime}s — relaunching (resume)"
+  fi
+done

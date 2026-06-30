@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+#
+# bin/clear-watch — cost-based auto-/clear of idle operator contexts.
+#
+# Per running operator, decide whether sending `/clear` NOW saves tokens, and if
+# so inject it into the operator's tmux pane. The decision is the cost model from
+# docs/COST.md, made concrete: a cold wake re-reads the WHOLE context at full
+# price (cache TTL is 300s sliding — an idle operator's warm cache is already
+# gone). So compare the cost of the NEXT cold input if we keep the bloated
+# context vs. the cost after a clear shrinks it to the post-clear floor:
+#
+#   cost_keep  = CTX_TOKENS      × price   (next cold wake re-reads the bloat)
+#   cost_clear = BASELINE_TOKENS × price   (next cold wake re-reads the lean floor)
+#   savings    = cost_keep - cost_clear
+#
+# Clear only when savings >= MIN_SAVINGS AND the context is genuinely bloated
+# (CTX_TOKENS >= CTX_FLOOR). This cost comparison IS the gate — there is no
+# separate fixed-size rule. Because clearing only pays off once the warm cache is
+# already cold, we also require the pane to be quiet past the 300s TTL (COLD_AFTER)
+# so a clear forfeits no live cache and a just-delivered nudge/mail defers it.
+#
+# Reuses the harvested ~/.cache/claude-usage/usage.<label> caches (one per
+# session, written by bin/usage-statusline) — it adds NO new harvesting. It reuses
+# the proven send-keys injection (bin/email-deliver / bin/self-clear) and the
+# dirty-tree guard (never clears an uncommitted working tree).
+#
+# SAFETY: the holdco supervisor is hard-excluded (never self-clears the operator
+# that runs this). A dirty working tree is skipped. A venture can opt out with
+# `auto_clear: false` in its ventures/<id>.md.
+#
+# Modes:
+#   bin/clear-watch              one tick, then exit (act on every passing operator)
+#   bin/clear-watch --dry-run    decide + log "WOULD CLEAR" but never send keys
+#   bin/clear-watch --loop       re-tick every CLEAR_WATCH_INTERVAL seconds
+#
+# All thresholds are env-overridable: COLD_AFTER, BASELINE_TOKENS, MIN_SAVINGS,
+# CTX_FLOOR, CLEAR_WATCH_INTERVAL, CACHE_DIR.
+#
+# Deps: bash + tmux + git. No jq needed (caches are KEY=VALUE; awk does floats).
+
+set -uo pipefail
+export LC_ALL=C
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# The shared "safe to act on this operator?" gate (supervisor exclude, live-pane,
+# quiet, clean-tree, opt-out), DRY'd into bin/lib/operator-gate.sh so clear-watch
+# and operator-roll share ONE definition. clear-watch uses the small predicates
+# (not the og_safe_to_act aggregate) so it can interleave its cost-specific gates
+# and keep its log lines byte-for-byte identical.
+# shellcheck source=lib/operator-gate.sh
+. "$REPO_ROOT/bin/lib/operator-gate.sh"
+
+CACHE_DIR="${CACHE_DIR:-$HOME/.cache/claude-usage}"
+LOG_FILE="$CACHE_DIR/clear-watch.log"
+
+# Thresholds (env-overridable).
+COLD_AFTER="${COLD_AFTER:-360}"            # quiet seconds before a pane is "cold" (>300s TTL)
+BASELINE_TOKENS="${BASELINE_TOKENS:-25000}" # estimated post-clear floor (system+tools+CLAUDE.md+persona)
+MIN_SAVINGS="${MIN_SAVINGS:-0.02}"          # $ a clear must save to be worth it
+CTX_FLOOR="${CTX_FLOOR:-$((BASELINE_TOKENS * 2))}" # require real bloat before clearing
+CLEAR_WATCH_INTERVAL="${CLEAR_WATCH_INTERVAL:-60}"  # --loop tick seconds
+
+DRY=0 LOOP=0
+for a in "$@"; do
+	case "$a" in
+	--dry-run) DRY=1 ;;
+	--loop) LOOP=1 ;;
+	-h | --help)
+		sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+		exit 0
+		;;
+	*) echo "clear-watch: unknown arg '$a'" >&2; exit 2 ;;
+	esac
+done
+
+# Input $/token by model family — single source of truth shared with
+# bin/usage-statusline and bin/holdco-tokens (public API rates; an estimate on a
+# subscription plan, used here only to compare keep-vs-clear, so absolute scale
+# doesn't matter — only the ratio does).
+price_for_model() {
+	case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+	*sonnet*) printf '0.000003' ;;
+	*haiku*) printf '0.000001' ;;
+	*) printf '0.000005' ;; # Opus / unknown
+	esac
+}
+
+log() {
+	mkdir -p "$CACHE_DIR" 2>/dev/null
+	printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$1" >>"$LOG_FILE"
+}
+
+# Evaluate + (unless dry) act on a single usage cache file. The safety gate
+# (supervisor / live-pane / quiet / clean-tree / opt-out) comes from the shared
+# bin/lib/operator-gate.sh predicates; the cost-specific gates (no-ctx-tokens /
+# below-ctx-floor / savings-below-min) are layered on top here, in order, so the
+# log lines stay byte-identical to the pre-DRY version.
+process_cache() {
+	local f="$1" panes="$2" now="$3"
+	local label cwd model ctx_tokens
+	label="$(og_field LABEL "$f")"
+	cwd="$(og_field CWD "$f")"
+	model="$(og_field MODEL "$f")"
+	ctx_tokens="$(og_field CTX_TOKENS "$f")"
+
+	[ -n "$label" ] || label="$(basename "$f" | sed 's/^usage\.//')"
+	local base; base="$(basename "$cwd" 2>/dev/null)"
+
+	# Gate 1 — hard-exclude the supervisor. Never self-clear holdco.
+	if og_is_supervisor "$label" "$base"; then
+		log "SKIP label=$label reason=supervisor"
+		return
+	fi
+
+	# Gate 2 — must have a context-size reading to make the cost call.
+	if ! [[ "$ctx_tokens" =~ ^[0-9]+$ ]]; then
+		log "SKIP label=$label reason=no-ctx-tokens"
+		return
+	fi
+
+	# Gate 3 — resolve a live pane whose cwd matches this session's CWD. No pane ⇒
+	# operator not running ⇒ skip.
+	local pane="" activity=""
+	read -r pane activity < <(og_resolve_pane "$cwd" "$panes")
+	if [ -z "$pane" ]; then
+		log "SKIP label=$label reason=no-live-pane"
+		return
+	fi
+
+	# Gate 4 — idle/cold + debounce. window_activity (not LAST_TURN_TS) is the
+	# truer pane-activity signal: a just-delivered nudge/mail send-keys bumps it and
+	# DEFERS the clear. Require quiet past the 300s cache TTL so the warm cache is
+	# already gone and a clear forfeits nothing.
+	local quiet
+	quiet="$(og_quiet_secs "$now" "$activity")"
+	if [ "$quiet" != "?" ] && [ "$quiet" -lt "$COLD_AFTER" ]; then
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet reason=warm-or-active"
+		return
+	fi
+
+	# Gate 5 — the cost decision. Clear only if it saves real money AND the context
+	# is genuinely bloated past the floor.
+	local price savings
+	price="$(price_for_model "$model")"
+	savings="$(awk -v c="$ctx_tokens" -v b="$BASELINE_TOKENS" -v p="$price" \
+		'BEGIN { d = (c - b) * p; if (d < 0) d = 0; printf "%.4f", d }')"
+	if [ "$ctx_tokens" -lt "$CTX_FLOOR" ]; then
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings reason=below-ctx-floor($CTX_FLOOR)"
+		return
+	fi
+	if awk -v s="$savings" -v m="$MIN_SAVINGS" 'BEGIN { exit !(s < m) }'; then
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings reason=savings-below-min($MIN_SAVINGS)"
+		return
+	fi
+
+	# Gate 6 — safety. NEVER clear an uncommitted tree, and honor per-venture opt-out.
+	if og_tree_dirty "$cwd"; then
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings reason=dirty-tree"
+		return
+	fi
+	if og_opt_out "$REPO_ROOT" "$base"; then
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings reason=opt-out"
+		return
+	fi
+
+	# Gate 7 — act. No marker file needed: after a clear CTX_TOKENS drops on the next
+	# render, so the cost gate naturally stops re-clearing.
+	if [ "$DRY" = 1 ]; then
+		log "WOULD CLEAR label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings pane=$pane"
+		return
+	fi
+	# Literal text then a separate Enter — matches bin/self-clear / bin/email-deliver.
+	if tmux send-keys -t "$pane" -l "/clear" 2>/dev/null && tmux send-keys -t "$pane" Enter 2>/dev/null; then
+		log "CLEARED label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings pane=$pane"
+	else
+		log "SKIP label=$label ctx_tokens=$ctx_tokens quiet=$quiet savings=$savings reason=send-keys-failed pane=$pane"
+	fi
+}
+
+tick() {
+	local now panes
+	now="$(date +%s)"
+	panes="$(og_panes_snapshot)"
+	shopt -s nullglob
+	local f
+	for f in "$CACHE_DIR"/usage.*; do
+		process_cache "$f" "$panes" "$now"
+	done
+}
+
+if [ "$LOOP" = 1 ]; then
+	while :; do
+		tick
+		sleep "$CLEAR_WATCH_INTERVAL"
+	done
+else
+	tick
+fi

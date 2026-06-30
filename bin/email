@@ -1,0 +1,115 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+#
+# bin/email — send an email via Cloudflare Email Sending.
+#
+# Owner-facing (default):
+#   bin/email "subject" "body text"            # holdco@${FLEET_EMAIL_DOMAIN} → ${OWNER_EMAIL}
+#   echo "body" | bin/email "subject"
+#
+# Agent-to-agent / explicit addressing:
+#   bin/email --from acme@bot.example.com --to holdco@bot.example.com "subj" "body"
+#   bin/email --to acme@bot.example.com "subj" "body"      # from defaults to holdco@
+#
+#   EMAIL_DRY=1 bin/email "subject" "body"     # validate without sending
+#
+# Every fleet address lives on the verified sending subdomain (FLEET_EMAIL_DOMAIN),
+# so any <id>@<that domain> is DKIM-signed by the same domain. The owner address is
+# OWNER_EMAIL. Both are read from .env (see .env.example / docs/EMAIL.md).
+#
+# Credentials (first hit wins; both also readable from holdco .env, gitignored):
+#   CLOUDFLARE_EMAIL_TOKEN  — scoped Email Sending Write token (yaks account only)
+#   HOLDCO_CF_ACCOUNT_ID    — Cloudflare account ID (yaks)
+#
+# Replies route via Cloudflare Email Routing → holdco-inbox Worker → KV; read with
+# bin/email-inbox. See docs/EMAIL.md.
+require "net/http"
+require "json"
+require "uri"
+
+env_val = lambda do |file, name|
+  f = File.expand_path(file)
+  return nil unless File.exist?(f)
+  line = File.readlines(f).find { |l| l =~ /^#{name}=/ }
+  line && line.split("=", 2)[1].strip.gsub(/\A["']|["']\z/, "")
+end
+holdco_env = File.expand_path("../.env", __dir__)
+
+# Fleet email identity (read from env or .env; generic fallbacks for an unconfigured tree).
+fleet_domain = ENV["FLEET_EMAIL_DOMAIN"] || env_val.call(holdco_env, "FLEET_EMAIL_DOMAIN") || "bot.example.com"
+owner_email  = ENV["OWNER_EMAIL"]        || env_val.call(holdco_env, "OWNER_EMAIL")        || "owner@example.com"
+
+# --- flags (parsed out of ARGV so positional subject/body still work) ---------
+def take_flag(name)
+  i = ARGV.index(name)
+  return nil unless i
+  ARGV.delete_at(i)
+  ARGV.delete_at(i) # the value now sits at the same index
+end
+
+if ARGV.include?("--help") || ARGV.include?("-h")
+  puts <<~USAGE
+    bin/email — send an email via Cloudflare Email Sending.
+
+    Owner-facing (default):  holdco@${FLEET_EMAIL_DOMAIN} → ${OWNER_EMAIL}
+      bin/email "subject" "body text"
+      echo "body" | bin/email "subject"
+
+    Explicit addressing:
+      bin/email --from <id>@<domain> --to <id>@<domain> "subj" "body"
+      bin/email --to <id>@<domain> "subj" "body"        # from defaults to holdco@
+
+    Flags:  --from ADDR   --to ADDR   --reply-to ADDR   --help/-h
+    Env:    EMAIL_DRY=1   validate the payload without sending
+            CLOUDFLARE_EMAIL_TOKEN, HOLDCO_CF_ACCOUNT_ID (also read from holdco .env)
+
+    Replies route via Cloudflare Email Routing -> holdco-inbox Worker -> KV
+    (read with bin/email-inbox). See docs/EMAIL.md.
+  USAGE
+  exit 0
+end
+
+from_addr = take_flag("--from") || ENV["EMAIL_FROM"] || env_val.call(holdco_env, "EMAIL_FROM") || "holdco@#{fleet_domain}"
+to        = take_flag("--to")   || ENV["HOLDCO_EMAIL_TO"] || owner_email
+reply_to  = take_flag("--reply-to") || ENV["HOLDCO_EMAIL_REPLY_TO"] || env_val.call(holdco_env, "HOLDCO_EMAIL_REPLY_TO") || from_addr
+from_name = from_addr.split("@").first
+
+subject = ARGV[0] || "holdco"
+body    = ARGV[1] || (STDIN.tty? ? "" : STDIN.read)
+
+token      = ENV["CLOUDFLARE_EMAIL_TOKEN"] || env_val.call(holdco_env, "CLOUDFLARE_EMAIL_TOKEN")
+account_id = ENV["HOLDCO_CF_ACCOUNT_ID"] || env_val.call(holdco_env, "HOLDCO_CF_ACCOUNT_ID")
+
+abort "bin/email: no CLOUDFLARE_EMAIL_TOKEN (set env or add to holdco .env)" if token.nil? || token.empty?
+abort "bin/email: no HOLDCO_CF_ACCOUNT_ID (set env or add to holdco .env)" if account_id.nil? || account_id.empty?
+
+payload = {
+  from: { address: from_addr, name: from_name },
+  to: [to],
+  reply_to: reply_to,
+  subject: subject,
+  text: body
+}
+
+if ENV["EMAIL_DRY"] == "1"
+  puts "DRY RUN — would send via Cloudflare Email Sending:"
+  puts JSON.pretty_generate(payload)
+  puts "account: #{account_id}"
+  exit 0
+end
+
+uri  = URI("https://api.cloudflare.com/client/v4/accounts/#{account_id}/email/sending/send")
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true
+req  = Net::HTTP::Post.new(uri, "Authorization" => "Bearer #{token}", "Content-Type" => "application/json")
+req.body = JSON.dump(payload)
+res = http.request(req)
+
+parsed = begin JSON.parse(res.body) rescue {} end
+unless res.code.to_i == 200 && parsed["success"]
+  abort "bin/email: send failed (HTTP #{res.code}): #{res.body}"
+end
+
+result = parsed["result"] || {}
+msg_id = result["message_id"] || "?"
+puts "sent ✓ #{from_addr} → #{to} via Cloudflare (#{msg_id})"

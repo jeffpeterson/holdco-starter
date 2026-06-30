@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# bin/self-clear — shed a stale context by sending `/clear` to THIS operator's own
+# tmux window. Lets a cold-reactive operator go lean+cold at a clean boundary
+# (a finished chunk of work) instead of waiting for holdco to stop+relaunch it.
+# See holdco's docs/COST.md: clear when context is big AND stale.
+#
+# HOW: a process running inside a tmux pane inherits $TMUX_PANE (the pane id, e.g.
+# "%7"). We `tmux send-keys` `/clear` + Enter to that pane — the same proven
+# send-keys delivery holdco uses to inject mail/nudges into an operator's window.
+# The keystrokes buffer at the pane's input and submit the instant this turn ends
+# and the operator returns to its prompt — so call self-clear as the FINAL action
+# of a pass, then stop.
+#
+# 🚨 HARD RULE — clean boundary ONLY. `/clear` WIPES all working state. Run this
+# ONLY after your work is committed AND the pass is logged to git (WORKLOG.md).
+# NEVER mid-task. As a safety net this script REFUSES on a dirty working tree
+# (uncommitted tracked/staged changes); pass --force to override for the rare case
+# of intentional untracked scratch you don't commit.
+#
+# USAGE: bin/self-clear [--force]
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+force=0
+[[ "${1:-}" == "--force" ]] && force=1
+
+if [[ -z "${TMUX_PANE:-}" ]]; then
+  echo "self-clear: not running inside a tmux pane (no \$TMUX_PANE) — refusing." >&2
+  exit 1
+fi
+
+# Safety net for the HARD RULE: never wipe an uncommitted working tree.
+if [[ "$force" != "1" ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    echo "self-clear: working tree is DIRTY — commit + log your pass first (or --force)." >&2
+    echo "self-clear: /clear wipes working state; refusing to clear mid-work." >&2
+    exit 1
+  fi
+fi
+
+# Literal text then a separate Enter — matches bin/email-deliver's injection.
+tmux send-keys -t "$TMUX_PANE" -l "/clear"
+tmux send-keys -t "$TMUX_PANE" Enter
+echo "self-clear: queued /clear to $TMUX_PANE — it submits when this turn ends. Stop now."

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#
+# bin/holdco-up — idempotently ensure the holdco portfolio operator is running in
+# tmux session 'holdco', window 'holdco'. No-op if it's already up.
+#
+# This is the ROOT of the supervision tree. holdco is the only thing guarded by
+# cron: `@reboot` recreates it after a reboot / power loss, and a `*/10` liveness
+# check brings it back if it crashes. holdco's own loop then keeps every venture
+# operator alive (it relaunches a down operator each pass) — so guarding holdco
+# guards the whole fleet.
+#
+set -euo pipefail
+
+# Make claude/tmux/node findable from a minimal @reboot/cron environment
+# (cron PATH is just /usr/bin:/bin; claude lives in ~/.local/bin, node under linuxbrew).
+export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:${PATH:-}"
+
+SESSION="holdco"
+WINDOW="HoldCo"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Launch the operator with the long conversation name; bin/holdco operate execs
+# claude with the persona, --remote-control, and the /loop opening prompt.
+LAUNCH="HOLDCO_REMOTE_NAME='HoldCo Operator' '$REPO_ROOT/bin/holdco' operate"
+
+command -v tmux >/dev/null 2>&1 || { echo "holdco-up: tmux not found — install tmux first" >&2; exit 1; }
+
+# Prepend the fleet token/usage segment to the holdco session's status bar.
+# Session-scoped so the owner's global tmux config is untouched; idempotent so a
+# relaunch never stacks the segment twice. tmux refreshes it every status-interval.
+TOKENS_SEG="#($REPO_ROOT/bin/holdco-tokens --tmux)"
+ensure_status_segment() {
+  tmux has-session -t "$SESSION" 2>/dev/null || return 0
+  tmux set-option -t "$SESSION" status-interval 60 2>/dev/null || true
+  tmux set-option -t "$SESSION" status-right-length 120 2>/dev/null || true
+  local cur; cur="$(tmux show-options -t "$SESSION" -v status-right 2>/dev/null)"
+  [ -n "$cur" ] || cur="$(tmux show-options -gv status-right 2>/dev/null)"
+  case "$cur" in
+    *holdco-tokens*) ;;  # already wired
+    *) tmux set-option -t "$SESSION" status-right "$TOKENS_SEG #[default]$cur" 2>/dev/null || true ;;
+  esac
+}
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  ensure_status_segment
+  if tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qFx "$WINDOW"; then
+    echo "holdco-up: '$WINDOW' window already running in session '$SESSION' — no-op"
+    exit 0
+  fi
+  # -d: open in the background so a relaunch never steals the owner's current view.
+  tmux new-window -d -t "$SESSION" -n "$WINDOW" -c "$REPO_ROOT" "$LAUNCH"
+else
+  tmux new-session -d -s "$SESSION" -n "$WINDOW" -c "$REPO_ROOT" "$LAUNCH"
+fi
+
+# Lock the window name + color it blue (ANSI theme color). The status-format pair
+# drops the cwd prefix from the owner's GLOBAL format (redundant on the supervisor
+# tab) — a per-window override only, so ~/.tmux.conf stays untouched.
+tmux set-window-option -t "$SESSION:$WINDOW" automatic-rename off 2>/dev/null || true
+tmux set-window-option -t "$SESSION:$WINDOW" window-status-format ' #W#{?window_bell_flag, !,} ' 2>/dev/null || true
+tmux set-window-option -t "$SESSION:$WINDOW" window-status-current-format ' #W#{?window_bell_flag, !,} ' 2>/dev/null || true
+tmux set-window-option -t "$SESSION:$WINDOW" window-status-style "fg=blue" 2>/dev/null || true
+tmux set-window-option -t "$SESSION:$WINDOW" window-status-current-style "fg=blue,reverse" 2>/dev/null || true
+ensure_status_segment
+echo "holdco-up: launched '$WINDOW' in tmux session '$SESSION'"

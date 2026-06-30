@@ -1,0 +1,22 @@
+name = "holdco-inbox"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# Email-only Worker — it has no fetch handler, so don't expose an HTTP surface.
+# (Without these, `wrangler deploy` enables a public *.workers.dev URL + preview URLs.)
+workers_dev = false
+preview_urls = false
+
+# KV binding — the Worker writes inbound messages here. NO secret in the Worker.
+# Create a KV namespace (`wrangler kv namespace create INBOX`) and paste its id below.
+[[kv_namespaces]]
+binding = "INBOX"
+id = "<YOUR_KV_NAMESPACE_ID>"
+
+# Deploy for reproducible redeploys: `cd services/inbox-worker && wrangler deploy`.
+#
+# Email Routing wiring (set up on your own zone for ${FLEET_EMAIL_DOMAIN}):
+#   - point your fleet subdomain's MX at route{1,2,3}.mx.cloudflare.net + SPF
+#   - add one routing rule per operator following the pattern:
+#       <id>@${FLEET_EMAIL_DOMAIN} -> this Worker (holdco-inbox)
+#   - any other addresses/zones (e.g. your root domain's normal mail) are untouched.

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# bin/clear-watch-cron — cron entry point for the cost-based auto-clear watcher.
+#
+# Runs ONE bin/clear-watch tick under flock, with the minimal cron environment
+# fleshed out to what clear-watch needs (PATH for tmux+git, HOME). Installed to
+# the user's crontab by bin/clear-watch-up to run every minute. Replaces the old
+# persistent tmux 'clear-watch' window that ran `bin/clear-watch --loop`.
+#
+# tmux finds the running server via its per-user socket (/tmp/tmux-$(id -u)/default),
+# derived from getuid() — NOT from the environment — so as long as HOME is set the
+# minimal cron context reaches the live server with no TMUX_TMPDIR / -S needed
+# (verified: `env -i HOME=$HOME PATH=/usr/bin:/bin bin/clear-watch-cron` ticks fine).
+#
+# ARMED by default (a bare clear-watch tick sends /clear). Disarm without editing
+# crontab by setting CLEAR_WATCH_ARM=0 → passes --dry-run (logs only).
+#
+set -euo pipefail
+
+# cron has a minimal environment — establish what clear-watch needs. Match the
+# explicit PATH style in bin/clear-watch-up so tmux + git are always found.
+export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:${PATH:-}"
+export HOME="${HOME:?HOME must be set}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Armed by default; CLEAR_WATCH_ARM=0 disarms to dry-run without touching crontab.
+ARGS=()
+[ "${CLEAR_WATCH_ARM:-1}" = "0" ] && ARGS+=(--dry-run)
+
+# flock -n: never let a slow tick overlap the next minute's run.
+exec flock -n /tmp/clear-watch.lock "$REPO_ROOT/bin/clear-watch" "${ARGS[@]}"

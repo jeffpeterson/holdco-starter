@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# imagegen — fleet-wide AI image generator.
+#
+# Default engine bills the owner's Codex / ChatGPT subscription (NOT the OpenAI
+# Images API): it reuses the on-box Codex login (~/.codex/auth.json) to call the
+# hosted image_generation tool at chatgpt.com/backend-api/codex. No OPENAI_API_KEY
+# needed. Engine is the vendored codex-imagegen-cli (vendor/codex-imagegen-cli,
+# pinned; see VENDORED.md). Any operator or designer subagent can create raster
+# assets — icons, mockups, hero/marketing images, OG/social cards — from a
+# freeform prompt, headless, with no TTY.
+#
+# PARALLEL BY DESIGN: each run is its own independent process. Fire as many as
+# you need at once (append `&`); they do NOT queue or wait on each other. There
+# is no shared "codex" singleton to free up.
+#
+#   imagegen "a flat origami fox logo, teal on cream"
+#   imagegen "hero: misty alpine valley at dawn" --quality high --size 1536x1024
+#   imagegen "app icon, transparent background" --background transparent --out public/icon.png
+#   # three at once, in parallel:
+#   imagegen "icon a" & imagegen "icon b" & imagegen "icon c" & wait
+#
+# Prints the absolute path of each saved PNG on stdout (last line = the path).
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: imagegen "<prompt>" [options]
+
+Options:
+  --out PATH        exact output file (overrides --dir + slug); .webp also supported
+  --dir DIR         output directory (default: ./assets/imagegen)
+  --quality Q       auto | low | medium | high  (default: medium; use low for drafts)
+  --size WxH        auto | 1024x1024 | 1536x1024 (landscape) | 1024x1536 (portrait)
+  --background B    auto | transparent | opaque  (transparent for cutout icons)
+  --openai          use the OpenAI Images API instead (needs OPENAI_API_KEY; separate billing)
+  -h, --help        this help
+
+Notes:
+  * Default engine bills the Codex / ChatGPT subscription (no OPENAI_API_KEY needed).
+  * Runs headless (no TTY) and in PARALLEL — fire several with `&`; they never queue.
+  * Output path(s) are printed on stdout (final line is the saved file).
+EOF
+}
+
+PROMPT=""
+OUT=""
+DIR="assets/imagegen"
+QUALITY="medium"
+SIZE="auto"
+BACKGROUND=""
+ENGINE="codex"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)    usage; exit 0 ;;
+    --out)        OUT="${2:?--out needs a path}"; shift 2 ;;
+    --dir)        DIR="${2:?--dir needs a path}"; shift 2 ;;
+    --quality)    QUALITY="${2:?--quality needs a value}"; shift 2 ;;
+    --size)       SIZE="${2:?--size needs a value}"; shift 2 ;;
+    --background) BACKGROUND="${2:?--background needs a value}"; shift 2 ;;
+    --openai)     ENGINE="openai"; shift ;;
+    --) shift; break ;;
+    -*) echo "imagegen: unknown option $1" >&2; usage; exit 2 ;;
+    *)  if [ -z "$PROMPT" ]; then PROMPT="$1"; else PROMPT="$PROMPT $1"; fi; shift ;;
+  esac
+done
+[ $# -gt 0 ] && PROMPT="${PROMPT:+$PROMPT }$*"
+
+if [ -z "$PROMPT" ]; then
+  echo "imagegen: a prompt is required" >&2
+  usage; exit 2
+fi
+
+# Locate the holdco repo root from the (possibly symlinked) script path so the
+# vendored engine is found regardless of cwd or the ~/.local/bin symlink.
+SELF="$(readlink -f "${BASH_SOURCE[0]:-$0}")"
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+VENDOR="$ROOT/vendor/codex-imagegen-cli"
+
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+
+# Self-bootstrapping venv so the script works on any box without polluting the
+# system python (PEP 668 externally-managed environments). pillow is needed by
+# both engines; openai only by the --openai fallback.
+VENV="$CODEX_HOME/.imagegen-venv"
+PY="$VENV/bin/python"
+need_pip=""
+[ -x "$PY" ] || need_pip="pillow"
+[ -x "$PY" ] && ! "$PY" -c "import PIL" >/dev/null 2>&1 && need_pip="pillow"
+if [ "$ENGINE" = "openai" ] && { [ ! -x "$PY" ] || ! "$PY" -c "import openai" >/dev/null 2>&1; }; then
+  need_pip="pillow openai"
+fi
+if [ -n "$need_pip" ]; then
+  echo "imagegen: setting up image deps ($need_pip, one-time)…" >&2
+  [ -x "$PY" ] || python3 -m venv "$VENV" >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  "$VENV/bin/pip" install --quiet --upgrade $need_pip >&2
+fi
+
+# Resolve the output path.
+if [ -z "$OUT" ]; then
+  slug=$(printf '%s' "$PROMPT" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -c 'a-z0-9' '-' \
+    | sed -E 's/-+/-/g; s/^-+//; s/-+$//' \
+    | cut -c1-50)
+  [ -z "$slug" ] && slug="image"
+  stamp=$(date +%H%M%S)
+  OUT="$DIR/${slug}-${stamp}.png"
+fi
+mkdir -p "$(dirname "$OUT")"
+
+if [ "$ENGINE" = "codex" ]; then
+  # ---- Default: Codex / ChatGPT subscription (no OPENAI_API_KEY) -------------
+  if [ ! -f "$VENDOR/codex_imagegen_cli/cli.py" ]; then
+    echo "imagegen: vendored codex engine not found at $VENDOR" >&2
+    echo "          Expected vendor/codex-imagegen-cli in the holdco repo." >&2
+    exit 1
+  fi
+  if [ ! -f "$CODEX_HOME/auth.json" ]; then
+    echo "imagegen: Codex login not found at $CODEX_HOME/auth.json." >&2
+    echo "          Run \`codex login\` and choose the ChatGPT login flow." >&2
+    exit 1
+  fi
+  args=(generate --prompt "$PROMPT" --quality "$QUALITY" --out "$OUT")
+  [ "$SIZE" != "auto" ] && args+=(--size "$SIZE")
+  [ -n "$BACKGROUND" ] && args+=(--background "$BACKGROUND")
+  [ -e "$OUT" ] && args+=(--force)
+  if ! PYTHONPATH="$VENDOR" "$PY" -m codex_imagegen_cli.cli "${args[@]}" >&2; then
+    echo "imagegen: generation failed (see above)." >&2
+    echo "          If it's an auth error: \`codex login\` (ChatGPT) may need refreshing." >&2
+    echo "          If it's a rate/quota limit: the Codex plan window is full — wait or retry." >&2
+    echo "          You can also fall back to the OpenAI Images API with: imagegen --openai \"…\"" >&2
+    exit 1
+  fi
+else
+  # ---- Fallback: OpenAI Images API (separate per-image billing) --------------
+  if [ -z "${OPENAI_API_KEY:-}" ]; then
+    echo "imagegen: --openai needs OPENAI_API_KEY in the environment." >&2
+    exit 1
+  fi
+  IMAGE_GEN="$CODEX_HOME/skills/.system/imagegen/scripts/image_gen.py"
+  if [ ! -f "$IMAGE_GEN" ]; then
+    echo "imagegen: codex image generator not found at $IMAGE_GEN" >&2
+    exit 1
+  fi
+  args=(generate --prompt "$PROMPT" --quality "$QUALITY" --out "$OUT")
+  [ "$SIZE" != "auto" ] && args+=(--size "$SIZE")
+  [ -e "$OUT" ] && args+=(--force)
+  "$PY" "$IMAGE_GEN" "${args[@]}" >&2
+fi
+
+# Print the absolute saved path as the result.
+abs=$(cd "$(dirname "$OUT")" && printf '%s/%s' "$(pwd)" "$(basename "$OUT")")
+echo "$abs"

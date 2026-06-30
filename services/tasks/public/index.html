@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>holdco tasks</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;--surface:#161616;--card:#1e1e1e;--border:#252525;--border2:#333;
+  --text:#e8e8e8;--muted:#888;--dim:#555;
+  --p0:#ff6b6b;--p1:#ffb347;--p2:#4a9eff;
+  --open:#4a9eff;--wip:#f0c040;--blocked:#ff6b6b;--done:#4caf50;
+  --kind-idea:#a78bfa;--kind-bug:#f87171;--kind-feedback:#34d399;--kind-task:#888;--kind-note:#94a3b8;
+  --panel-w:1200px;
+}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;
+  font-size:14px;line-height:1.5;overflow-x:auto}
+
+/* header */
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;
+  background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+header h1{font-size:1rem;font-weight:600;letter-spacing:-.01em;color:var(--text);white-space:nowrap}
+header h1 span{color:var(--muted);font-weight:400}
+.controls{display:flex;gap:8px;align-items:center;flex:1;flex-wrap:wrap}
+select,button{padding:5px 10px;border-radius:5px;border:1px solid var(--border2);
+  background:var(--card);color:var(--text);font-size:.8rem;cursor:pointer}
+select:focus,button:focus{outline:2px solid var(--p2);outline-offset:1px}
+button.primary{background:var(--p2);border-color:transparent;color:#fff;font-weight:500}
+button.primary:hover{filter:brightness(1.1)}
+button.sm{padding:4px 8px;font-size:.75rem}
+button.toggle{padding:4px 10px;font-size:.75rem;font-weight:500}
+button.toggle.active{background:rgba(74,158,255,.2);border-color:var(--p2);color:var(--p2)}
+.spacer{flex:1}
+.logout{font-size:.75rem;color:var(--muted);text-decoration:none}
+.logout:hover{color:var(--text)}
+
+/* board */
+#board{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:0;min-height:calc(100vh - 49px)}
+#board.panel-open{grid-template-columns:repeat(4,minmax(140px,1fr))}
+.col{border-right:1px solid var(--border);padding:10px 8px;min-height:300px}
+.col:last-child{border-right:none}
+.col-header{display:flex;align-items:center;gap:6px;padding:4px 4px 10px;
+  font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  border-bottom:2px solid var(--border);margin-bottom:8px;position:sticky;top:49px;
+  background:var(--bg);z-index:5}
+.col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.col-count{margin-left:auto;background:var(--surface);border-radius:10px;
+  padding:1px 7px;font-size:.7rem;color:var(--dim)}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:7px;
+  padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:var(--border2);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.card.selected{border-color:var(--p2);box-shadow:0 0 0 2px rgba(74,158,255,.2)}
+.card-title{font-size:.85rem;font-weight:500;line-height:1.4;margin-bottom:6px}
+.badges{display:flex;gap:4px;flex-wrap:wrap}
+.badge{font-size:.65rem;font-weight:600;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+.badge.p0{background:rgba(255,107,107,.2);color:var(--p0);border:1px solid rgba(255,107,107,.3)}
+.badge.p1{background:rgba(255,179,71,.15);color:var(--p1);border:1px solid rgba(255,179,71,.25)}
+.badge.p2{background:rgba(74,158,255,.12);color:var(--p2);border:1px solid rgba(74,158,255,.2)}
+.badge.domain{background:var(--surface);color:var(--muted);border:1px solid var(--border2)}
+.badge.blocked{background:rgba(255,107,107,.15);color:var(--p0);border:1px solid rgba(255,107,107,.3)}
+.badge.inbox{background:rgba(148,163,184,.15);color:var(--kind-note);border:1px solid rgba(148,163,184,.3)}
+.badge.kind-idea{background:rgba(167,139,250,.15);color:var(--kind-idea);border:1px solid rgba(167,139,250,.3)}
+.badge.kind-bug{background:rgba(248,113,113,.15);color:var(--kind-bug);border:1px solid rgba(248,113,113,.3)}
+.badge.kind-feedback{background:rgba(52,211,153,.15);color:var(--kind-feedback);border:1px solid rgba(52,211,153,.3)}
+.badge.kind-task{display:none}
+.badge.kind-note{background:rgba(148,163,184,.15);color:var(--kind-note);border:1px solid rgba(148,163,184,.3)}
+.venture-label{font-size:.7rem;color:var(--dim);margin-bottom:4px}
+.assignee-label{font-size:.68rem;color:var(--muted);margin-top:5px}
+
+/* side panel */
+#panel{display:none;position:fixed;right:0;top:0;bottom:0;width:var(--panel-w);max-width:100vw;
+  background:var(--surface);border-left:1px solid var(--border);
+  overflow-y:auto;z-index:20;box-shadow:-6px 0 30px rgba(0,0,0,.5)}
+#panel.open{display:flex;flex-direction:column}
+
+.panel-header{padding:16px 20px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;gap:10px;position:sticky;top:0;
+  background:var(--surface);z-index:2}
+.panel-header h2{font-size:1rem;font-weight:600;line-height:1.4;flex:1;margin:0}
+.btn-close{background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:1.3rem;padding:0 2px;line-height:1;flex-shrink:0}
+.btn-close:hover{color:var(--text)}
+
+.panel-body{padding:20px;flex:1;display:flex;flex-direction:column;gap:16px}
+
+#panel label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:5px;font-weight:500;letter-spacing:.02em}
+#panel input[type=text],#panel textarea,#panel select{
+  width:100%;padding:9px 11px;border:1px solid var(--border2);border-radius:6px;
+  background:var(--card);color:var(--text);font-size:.875rem;font-family:inherit}
+#panel input[type=text]{font-size:.95rem}
+#panel textarea{resize:vertical;field-sizing:content;min-height:120px;line-height:1.6;overflow-y:hidden}
+#panel input:focus,#panel textarea:focus,#panel select:focus{
+  outline:2px solid var(--p2);outline-offset:1px;border-color:transparent}
+.panel-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.panel-actions{display:flex;gap:8px;padding-top:4px;border-top:1px solid var(--border);margin-top:2px}
+.panel-venture-tag{font-size:.73rem;color:var(--dim);margin-top:-8px}
+
+/* two-column edit layout */
+.edit-cols{display:grid;grid-template-columns:1fr 220px;gap:16px;align-items:start}
+.edit-main{display:flex;flex-direction:column;gap:12px}
+.desc-wrap{display:flex;flex-direction:column;gap:5px}
+.desc-wrap textarea{min-height:260px}
+.edit-side{display:flex;flex-direction:column;gap:10px}
+/* priority segmented control */
+.priority-group{display:flex;border-radius:6px;overflow:hidden;border:1px solid var(--border2)}
+.priority-group input[type=radio]{display:none}
+.priority-group label{flex:1;text-align:center;padding:6px 8px;font-size:.75rem;font-weight:600;
+  letter-spacing:.04em;cursor:pointer;color:var(--muted);border-right:1px solid var(--border2);
+  transition:background .12s,color .12s}
+.priority-group label:last-child{border-right:none}
+#ep-none:checked+label,#np-none:checked+label{background:var(--surface);color:var(--dim)}
+#ep-p0:checked+label,#np-p0:checked+label{background:rgba(255,107,107,.2);color:var(--p0)}
+#ep-p1:checked+label,#np-p1:checked+label{background:rgba(255,179,71,.2);color:var(--p1)}
+#ep-p2:checked+label,#np-p2:checked+label{background:rgba(74,158,255,.15);color:var(--p2)}
+
+.delete-btn{background:rgba(255,107,107,.15);border-color:rgba(255,107,107,.3);color:var(--p0)}
+.delete-btn:hover{background:rgba(255,107,107,.25)}
+#panel-msg{font-size:.8rem;min-height:1.2em}
+#panel-msg.ok{color:var(--done)}
+#panel-msg.err{color:var(--p0)}
+
+/* empty states */
+.empty{padding:16px;text-align:center;color:var(--dim);font-size:.8rem}
+.loading{padding:40px;text-align:center;color:var(--muted);font-size:.9rem}
+.error-banner{background:rgba(255,107,107,.15);border:1px solid rgba(255,107,107,.3);
+  border-radius:6px;padding:10px 14px;color:var(--p0);font-size:.85rem;margin:12px}
+
+/* comment badge on cards */
+.badge.comment-badge{background:rgba(74,158,255,.12);color:var(--p2);
+  border:1px solid rgba(74,158,255,.2);letter-spacing:0;font-size:.65rem}
+
+/* comment thread in panel */
+.comments-section{margin-top:4px;padding-top:16px;border-top:2px solid var(--border2)}
+.comments-head{font-size:.75rem;font-weight:700;color:var(--text);letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:12px}
+.comment{padding:10px 12px;background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;margin-bottom:8px}
+.comment-meta{display:flex;gap:8px;align-items:center;margin-bottom:5px}
+.comment-author{font-size:.75rem;font-weight:600;color:var(--text)}
+.comment-time{font-size:.68rem;color:var(--muted)}
+.comment-body{font-size:.875rem;line-height:1.6;white-space:pre-wrap;color:var(--text)}
+.no-comments{font-size:.8rem;color:var(--dim);text-align:center;padding:10px 0 4px}
+.reply-box{margin-top:10px;background:var(--card);border:1px solid var(--border2);
+  border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.reply-row{display:flex;align-items:center;gap:8px}
+.reply-row label{font-size:.75rem;color:var(--muted);white-space:nowrap;margin:0;font-weight:500}
+.reply-row select{flex:1;padding:5px 8px;font-size:.8rem}
+#reply-body{min-height:64px;font-size:.875rem}
+.reply-actions{display:flex;align-items:center;gap:8px}
+.reply-msg{font-size:.8rem;color:var(--done)}
+.reply-msg.err{color:var(--p0)}
+
+/* description: read view (rendered markdown) + edit toggle */
+.desc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.desc-head label{margin-bottom:0}
+.desc-edit-btn{padding:2px 9px;font-size:.72rem;font-weight:500;color:var(--muted);
+  background:var(--card);border:1px solid var(--border2);border-radius:5px;cursor:pointer}
+.desc-edit-btn:hover{color:var(--text);border-color:var(--p2)}
+.desc-read{background:var(--card);border:1px solid var(--border);border-radius:6px;
+  padding:12px 14px;min-height:120px;font-size:.875rem;line-height:1.65;color:var(--text);
+  overflow-wrap:anywhere}
+.desc-empty{color:var(--dim);font-style:italic}
+.desc-edit-actions{display:flex;gap:8px;margin-top:8px}
+
+/* rendered markdown elements */
+.md>*:first-child{margin-top:0}
+.md>*:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:14px 0 8px;line-height:1.3;font-weight:600}
+.md h1{font-size:1.25rem}.md h2{font-size:1.1rem}.md h3{font-size:1rem}
+.md h4,.md h5,.md h6{font-size:.9rem}
+.md p{margin:0 0 10px}
+.md ul,.md ol{margin:0 0 10px;padding-left:22px}
+.md li{margin:3px 0}
+.md ul.contains-task-list{list-style:none;padding-left:4px}
+.md li.task-list-item,.md li:has(>input[type=checkbox]){list-style:none;margin-left:-18px}
+.md li>input[type=checkbox]{margin-right:6px;vertical-align:middle}
+.md a{color:var(--p2);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md code{background:var(--bg);border:1px solid var(--border);border-radius:4px;
+  padding:1px 5px;font-size:.82em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.md pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;overflow-x:auto;margin:0 0 10px}
+.md pre code{background:none;border:none;padding:0;font-size:.82rem}
+.md blockquote{border-left:3px solid var(--border2);margin:0 0 10px;
+  padding:2px 0 2px 12px;color:var(--muted)}
+.md hr{border:none;border-top:1px solid var(--border2);margin:14px 0}
+.md table{border-collapse:collapse;margin:0 0 10px;font-size:.85rem}
+.md th,.md td{border:1px solid var(--border2);padding:4px 8px;text-align:left}
+.md th{background:var(--card)}
+.md img{max-width:100%;border-radius:6px}
+</style>
+<script src="/marked.min.js"></script>
+<script src="/purify.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>holdco <span>tasks</span></h1>
+  <div class="controls">
+    <select id="venture-filter">
+      <option value="">All ventures</option>
+      <option value="__inbox__">Inbox (no venture)</option>
+    </select>
+    <select id="kind-filter">
+      <option value="">All kinds</option>
+      <option value="task">task</option>
+      <option value="idea">idea</option>
+      <option value="bug">bug</option>
+      <option value="feedback">feedback</option>
+      <option value="note">note</option>
+    </select>
+    <button id="mine-btn" class="sm toggle" onclick="toggleMine()" title="Tasks assigned to me or blocked on me">Mine</button>
+    <button onclick="refresh()" class="sm">↺ Refresh</button>
+  </div>
+  <div class="spacer"></div>
+  <a href="/login" class="logout" title="Sign out">Sign out</a>
+</header>
+
+<div id="board">
+  <div class="loading">Loading…</div>
+</div>
+
+<div id="panel">
+  <div class="panel-header">
+    <h2 id="panel-heading"></h2>
+    <button class="btn-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panel-content"></div>
+</div>
+
+<script>
+// ---- state ------------------------------------------------------------------
+let ventures = [];
+let tasks = [];
+let selectedId = null;
+let ventureFilter = '';
+let kindFilter = '';
+let mineFilter = false;
+
+const OWNER = 'owner';
+const ASSIGNEES = [
+  { value: '',          label: 'Unassigned' },
+  { value: 'owner',     label: 'owner (me)' },
+  { value: 'holdco',    label: 'holdco' },
+  // One entry per operator, e.g.:
+  { value: 'acme',      label: 'acme' },
+];
+
+const STATUSES = [
+  { key: 'open',    label: 'Open',        color: 'var(--open)' },
+  { key: 'wip',     label: 'In Progress', color: 'var(--wip)' },
+  { key: 'blocked', label: 'Blocked',     color: 'var(--blocked)' },
+  { key: 'done',    label: 'Done',        color: 'var(--done)' },
+];
+
+const DOMAINS = ['Eng','Design','Product','Marketing','Finance','Legal','Ops','GTM','Support'];
+
+// ---- api helpers ------------------------------------------------------------
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api/v1' + path, opts);
+  if (r.status === 401) { location.href = '/login'; return null; }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ---- url <-> view state -----------------------------------------------------
+// The view (active filters + open task) is reflected in the query string so a
+// URL is shareable, bookmarkable, and back/forward-friendly. pushState on
+// open/close task (so Back closes a task); replaceState on filter changes (so
+// we don't flood history). popstate re-applies whatever the URL now says.
+function buildURL() {
+  const p = new URLSearchParams();
+  if (ventureFilter) p.set('venture', ventureFilter);
+  if (kindFilter)    p.set('kind', kindFilter);
+  if (mineFilter)    p.set('mine', '1');
+  if (selectedId)    p.set('task', selectedId);
+  const qs = p.toString();
+  return location.pathname + (qs ? '?' + qs : '');
+}
+function pushURL()    { history.pushState(null, '', buildURL()); }
+function replaceURL() { history.replaceState(null, '', buildURL()); }
+
+// Apply the current URL to the view WITHOUT writing history (used on boot and
+// for popstate). Robust to stale/unknown params: a deleted task id just won't
+// open; an unknown filter value simply matches nothing.
+function applyURL() {
+  const p = new URLSearchParams(location.search);
+  ventureFilter = p.get('venture') || '';
+  kindFilter    = p.get('kind') || '';
+  mineFilter    = p.get('mine') === '1';
+
+  const vf = document.getElementById('venture-filter');
+  if (vf) vf.value = ventureFilter;
+  const kf = document.getElementById('kind-filter');
+  if (kf) kf.value = kindFilter;
+  const mb = document.getElementById('mine-btn');
+  if (mb) mb.classList.toggle('active', mineFilter);
+
+  const taskId = p.get('task');
+  if (taskId && tasks.find(t => t.id === taskId)) {
+    selectCard(taskId); // selectCard re-renders the board + opens the panel
+  } else {
+    selectedId = null;
+    document.getElementById('panel').classList.remove('open');
+    render();
+  }
+}
+
+// Open a task on user intent (card click / new task) — pushes a history entry.
+function openTask(id) {
+  selectCard(id);
+  pushURL();
+}
+
+window.addEventListener('popstate', applyURL);
+
+// ---- load & render ----------------------------------------------------------
+async function load() {
+  try {
+    [ventures, tasks] = await Promise.all([
+      api('GET', '/ventures'),
+      api('GET', '/tasks'),
+    ]);
+    if (!ventures || !tasks) return;
+    populateVentureFilter();
+    render();
+    applyURL(); // restore filters + open task from the URL on first paint
+  } catch(e) {
+    document.getElementById('board').innerHTML =
+      `<div class="error-banner">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function populateVentureFilter() {
+  const sel = document.getElementById('venture-filter');
+  const cur = sel.value;
+  // Keep static options (All + Inbox), then add venture options
+  sel.innerHTML = `
+    <option value="">All ventures</option>
+    <option value="__inbox__">Inbox (no venture)</option>
+  `;
+  ventures.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.id;
+    o.textContent = v.title;
+    if (v.id === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (cur === '__inbox__') sel.value = '__inbox__';
+}
+
+function visibleTasks() {
+  return tasks.filter(t => {
+    if (ventureFilter === '__inbox__') {
+      if (t.venture_id) return false;
+    } else if (ventureFilter) {
+      if (t.venture_id !== ventureFilter) return false;
+    }
+    if (kindFilter && (t.kind || 'task') !== kindFilter) return false;
+    if (mineFilter && t.assignee !== OWNER && !t.blocked_on_user) return false;
+    return true;
+  });
+}
+
+function render() {
+  const board = document.getElementById('board');
+  const panelOpen = document.getElementById('panel').classList.contains('open');
+  board.classList.toggle('panel-open', panelOpen);
+
+  const visible = visibleTasks();
+  const byStatus = {};
+  STATUSES.forEach(s => byStatus[s.key] = []);
+  visible.forEach(t => { if (byStatus[t.status]) byStatus[t.status].push(t); });
+
+  board.innerHTML = STATUSES.map(s => {
+    const col = byStatus[s.key];
+    const cards = col.map(t => renderCard(t)).join('');
+    return `<div class="col" data-status="${s.key}">
+      <div class="col-header">
+        <span class="col-dot" style="background:${s.color}"></span>
+        ${s.label}
+        <span class="col-count">${col.length}</span>
+      </div>
+      ${cards || '<div class="empty">—</div>'}
+    </div>`;
+  }).join('');
+
+  if (selectedId) {
+    const el = board.querySelector(`.card[data-id="${CSS.escape(selectedId)}"]`);
+    if (el) el.classList.add('selected');
+  }
+}
+
+function renderCard(t) {
+  const pclass = (t.priority || 'p2').toLowerCase();
+  // Show venture label unless filtered to a specific venture (but always show Inbox label)
+  const showVenture = !ventureFilter || ventureFilter === '__inbox__';
+  const ventureLabel = showVenture
+    ? `<div class="venture-label">${t.venture_id ? esc(t.venture_title || t.venture_id) : '<em>inbox</em>'}</div>`
+    : '';
+  const blockedBadge = t.blocked_on_user
+    ? '<span class="badge blocked">blocked</span>' : '';
+  const domainBadge = t.domain
+    ? `<span class="badge domain">${esc(t.domain)}</span>` : '';
+  const kind = t.kind || 'task';
+  const kindBadge = `<span class="badge kind-${esc(kind)}">${esc(kind)}</span>`;
+  const assigneeLabel = t.assignee
+    ? `<div class="assignee-label">${esc(t.assignee)}</div>` : '';
+  const commentBadge = (t.comment_count > 0)
+    ? `<span class="badge comment-badge">💬 ${t.comment_count}</span>` : '';
+  return `<div class="card${t.id === selectedId ? ' selected' : ''}"
+    data-id="${esc(t.id)}" onclick="openTask('${esc(t.id)}')">
+    ${ventureLabel}
+    <div class="card-title">${esc(t.title)}</div>
+    <div class="badges">
+      <span class="badge ${pclass}">${esc(t.priority || 'P2')}</span>
+      ${kindBadge}
+      ${domainBadge}
+      ${blockedBadge}
+      ${commentBadge}
+    </div>
+    ${assigneeLabel}
+  </div>`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Open rendered links in a new tab; DOMPurify strips javascript:/unsafe URLs.
+DOMPurify.addHook('afterSanitizeAttributes', n => {
+  if (n.tagName === 'A') {
+    n.setAttribute('target', '_blank');
+    n.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
+// Render task description markdown → sanitized HTML for the read view.
+function renderMarkdown(text) {
+  if (!text || !String(text).trim())
+    return '<span class="desc-empty">No description yet — click Edit to add one.</span>';
+  const html = marked.parse(String(text), { gfm: true, breaks: true });
+  return DOMPurify.sanitize(html);
+}
+
+// Swap the description between rendered read view and the editing textarea.
+function toggleDescEdit(editing) {
+  const read = document.getElementById('desc-read');
+  const wrap = document.getElementById('desc-edit-wrap');
+  const ta   = document.getElementById('edit-desc');
+  if (!read || !wrap || !ta) return;
+  if (editing) {
+    read.style.display = 'none';
+    wrap.style.display = 'block';
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+    ta.focus();
+  } else {
+    // Cancel: discard unsaved edits, restore the stored description.
+    const task = tasks.find(t => t.id === selectedId);
+    ta.value = task ? (task.description || '') : '';
+    wrap.style.display = 'none';
+    read.style.display = 'block';
+  }
+}
+
+// Auto-grow textarea (fallback for browsers without field-sizing:content)
+function attachAutogrow(el) {
+  if (!el) return;
+  function grow() { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+  el.addEventListener('input', grow);
+  grow();
+}
+
+// D1 stores UTC without T/Z: "YYYY-MM-DD HH:MM:SS"
+function relTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso.replace(' ', 'T') + 'Z');
+  const diff = Date.now() - t.getTime();
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
+async function loadComments(taskId) {
+  const thread = document.getElementById('comments-thread');
+  if (!thread) return;
+  try {
+    const comments = await api('GET', `/tasks/${encodeURIComponent(taskId)}/comments`);
+    if (!comments) return;
+    // Keep card badge in sync with thread count
+    const idx = tasks.findIndex(t => t.id === taskId);
+    if (idx >= 0 && tasks[idx].comment_count !== comments.length) {
+      tasks[idx].comment_count = comments.length;
+      render();
+    }
+    thread.innerHTML = comments.length === 0
+      ? '<div class="no-comments">No replies yet — be the first.</div>'
+      : comments.map(c => `
+          <div class="comment">
+            <div class="comment-meta">
+              <span class="comment-author">${esc(c.author)}</span>
+              <span class="comment-time">${relTime(c.created_at)}</span>
+            </div>
+            <div class="comment-body">${esc(c.body)}</div>
+          </div>`).join('');
+  } catch(e) {
+    if (thread) thread.innerHTML =
+      `<div class="no-comments" style="color:var(--p0)">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function postComment(taskId) {
+  const bodyEl  = document.getElementById('reply-body');
+  const authorEl = document.getElementById('reply-author');
+  const msg     = document.getElementById('reply-msg');
+  msg.className = 'reply-msg';
+  const body = bodyEl.value.trim();
+  if (!body) { msg.className = 'reply-msg err'; msg.textContent = 'Body required'; return; }
+  try {
+    await api('POST', `/tasks/${encodeURIComponent(taskId)}/comments`, {
+      author: authorEl.value,
+      body,
+    });
+    bodyEl.value = '';
+    msg.textContent = '';
+    await loadComments(taskId);
+  } catch(e) {
+    msg.className = 'reply-msg err';
+    msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+function assigneeOptions(current) {
+  return ASSIGNEES.map(a =>
+    `<option value="${esc(a.value)}"${a.value === (current || '') ? ' selected' : ''}>${esc(a.label)}</option>`
+  ).join('');
+}
+
+function ventureOptions(currentId) {
+  const inbox = `<option value=""${!currentId ? ' selected' : ''}>— No venture (Inbox)</option>`;
+  const opts = ventures.map(v =>
+    `<option value="${esc(v.id)}"${v.id === currentId ? ' selected' : ''}>${esc(v.title)}</option>`
+  ).join('');
+  return inbox + opts;
+}
+
+// ---- panel (detail / edit) --------------------------------------------------
+function selectCard(id) {
+  selectedId = id;
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  render();
+
+  const panel = document.getElementById('panel');
+  panel.classList.add('open');
+  render(); // re-render to apply panel-open class to board
+
+  document.getElementById('panel-heading').textContent = 'Edit task';
+
+  document.getElementById('panel-content').innerHTML = `
+    <div class="edit-cols">
+      <div class="edit-main">
+        <div>
+          <label>Title</label>
+          <input type="text" id="edit-title" value="${esc(task.title)}" autofocus>
+        </div>
+        <div class="desc-wrap">
+          <div class="desc-head">
+            <label>Description</label>
+            <button type="button" class="desc-edit-btn" onclick="toggleDescEdit(true)">✎ Edit</button>
+          </div>
+          <div class="desc-read md" id="desc-read">${renderMarkdown(task.description)}</div>
+          <div id="desc-edit-wrap" style="display:none">
+            <textarea id="edit-desc">${esc(task.description || '')}</textarea>
+            <div class="desc-edit-actions">
+              <button type="button" class="sm primary" onclick="saveCard('${esc(id)}')">Save</button>
+              <button type="button" class="sm" onclick="toggleDescEdit(false)">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="edit-side">
+        <div>
+          <label>Status</label>
+          <select id="edit-status">
+            ${STATUSES.map(s => `<option value="${s.key}"${task.status===s.key?' selected':''}>${s.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Priority</label>
+          <div class="priority-group">
+            <input type="radio" name="edit-priority-r" id="ep-none" value=""${!task.priority ? ' checked' : ''}><label for="ep-none">—</label>
+            <input type="radio" name="edit-priority-r" id="ep-p0" value="P0"${task.priority==='P0' ? ' checked' : ''}><label for="ep-p0">P0</label>
+            <input type="radio" name="edit-priority-r" id="ep-p1" value="P1"${task.priority==='P1' ? ' checked' : ''}><label for="ep-p1">P1</label>
+            <input type="radio" name="edit-priority-r" id="ep-p2" value="P2"${task.priority==='P2' ? ' checked' : ''}><label for="ep-p2">P2</label>
+          </div>
+        </div>
+        <div>
+          <label>Assignee</label>
+          <select id="edit-assignee">${assigneeOptions(task.assignee)}</select>
+        </div>
+        <div>
+          <label>Kind</label>
+          <select id="edit-kind">
+            ${['task','idea','bug','feedback','note'].map(k => `<option${(task.kind||'task')===k?' selected':''}>${k}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Domain</label>
+          <select id="edit-domain">
+            <option value="">—</option>
+            ${DOMAINS.map(d => `<option${task.domain===d?' selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Venture</label>
+          <select id="edit-venture">${ventureOptions(task.venture_id)}</select>
+        </div>
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text);font-size:.85rem">
+            <input type="checkbox" id="edit-blocked" ${task.blocked_on_user ? 'checked' : ''}>
+            Blocked on user
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-actions">
+      <button class="primary sm" onclick="saveCard('${esc(id)}')">Save</button>
+      <button class="sm delete-btn" onclick="deleteCard('${esc(id)}')">Delete</button>
+      <button class="sm" onclick="closePanel()">Cancel</button>
+    </div>
+    <div id="panel-msg"></div>
+
+    <div class="comments-section">
+      <div class="comments-head">Thread</div>
+      <div id="comments-thread"><div class="loading" style="padding:12px 0">Loading…</div></div>
+      <div class="reply-box">
+        <div class="reply-row">
+          <label>As</label>
+          <select id="reply-author">
+            ${ASSIGNEES.filter(a => a.value).map(a =>
+              `<option value="${esc(a.value)}"${a.value === OWNER ? ' selected' : ''}>${esc(a.label)}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <textarea id="reply-body" placeholder="Reply or answer…"></textarea>
+        <div class="reply-actions">
+          <button class="sm primary" onclick="postComment('${esc(id)}')">Post reply</button>
+          <span id="reply-msg" class="reply-msg"></span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  attachAutogrow(document.getElementById('edit-desc'));
+  attachAutogrow(document.getElementById('reply-body'));
+  loadComments(id);
+}
+
+async function saveCard(id) {
+  const msg = document.getElementById('panel-msg');
+  msg.className = '';
+  try {
+    const updated = await api('PATCH', `/tasks/${encodeURIComponent(id)}`, {
+      title:           document.getElementById('edit-title').value.trim(),
+      description:     document.getElementById('edit-desc').value.trim() || null,
+      status:          document.getElementById('edit-status').value,
+      priority:        document.querySelector('input[name="edit-priority-r"]:checked')?.value || null,
+      kind:            document.getElementById('edit-kind').value,
+      domain:          document.getElementById('edit-domain').value || null,
+      assignee:        document.getElementById('edit-assignee').value || null,
+      venture_id:      document.getElementById('edit-venture').value || null,
+      blocked_on_user: document.getElementById('edit-blocked').checked ? 1 : 0,
+    });
+    if (!updated) return;
+    const idx = tasks.findIndex(t => t.id === id);
+    if (idx >= 0) tasks[idx] = { ...tasks[idx], ...updated };
+    render();
+    selectCard(id);
+    msg.className = 'ok';
+    msg.textContent = 'Saved';
+    setTimeout(() => { if (msg) { msg.textContent = ''; msg.className = ''; } }, 2000);
+  } catch(e) {
+    msg.className = 'err';
+    msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function deleteCard(id) {
+  if (!confirm(`Delete task "${id}"?`)) return;
+  try {
+    await api('DELETE', `/tasks/${encodeURIComponent(id)}`);
+    tasks = tasks.filter(t => t.id !== id);
+    selectedId = null;
+    closePanel();
+    render();
+  } catch(e) {
+    const msg = document.getElementById('panel-msg');
+    msg.className = 'err';
+    msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+function closePanel() {
+  const had = !!selectedId;
+  selectedId = null;
+  document.getElementById('panel').classList.remove('open');
+  render();
+  if (had) pushURL(); // Back reopens the task we just closed
+}
+
+// ---- new task ---------------------------------------------------------------
+function showNewTask() {
+  selectedId = null;
+  render();
+  const panel = document.getElementById('panel');
+  panel.classList.add('open');
+  render(); // apply panel-open to board
+  document.getElementById('panel-heading').textContent = 'New task';
+  // Pre-select venture from current filter (not inbox sentinel)
+  const defaultVenture = (ventureFilter && ventureFilter !== '__inbox__') ? ventureFilter : '';
+  document.getElementById('panel-content').innerHTML = `
+    <div>
+      <label>Title</label>
+      <input type="text" id="new-title" placeholder="Short imperative title" autofocus>
+    </div>
+    <div>
+      <label>Description <span style="color:var(--dim);font-weight:400">(optional)</span></label>
+      <textarea id="new-desc" rows="8" placeholder="Context, acceptance criteria, links…"></textarea>
+    </div>
+    <div>
+      <label>Assignee <span style="color:var(--dim);font-weight:400">(optional)</span></label>
+      <select id="new-assignee">${assigneeOptions('')}</select>
+    </div>
+    <div>
+      <label>Priority</label>
+      <div class="priority-group">
+        <input type="radio" name="new-priority-r" id="np-none" value=""><label for="np-none">—</label>
+        <input type="radio" name="new-priority-r" id="np-p0" value="P0"><label for="np-p0">P0</label>
+        <input type="radio" name="new-priority-r" id="np-p1" value="P1"><label for="np-p1">P1</label>
+        <input type="radio" name="new-priority-r" id="np-p2" value="P2" checked><label for="np-p2">P2</label>
+      </div>
+    </div>
+    <div class="panel-row">
+      <div>
+        <label>Kind</label>
+        <select id="new-kind">
+          <option>task</option><option>idea</option><option>bug</option><option>feedback</option><option>note</option>
+        </select>
+      </div>
+      <div></div>
+    </div>
+    <div class="panel-row">
+      <div>
+        <label>Domain <span style="color:var(--dim);font-weight:400">(optional)</span></label>
+        <select id="new-domain">
+          <option value="">—</option>
+          ${DOMAINS.map(d => `<option>${d}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>Venture <span style="color:var(--dim);font-weight:400">(optional)</span></label>
+        <select id="new-venture">
+          <option value="" ${!defaultVenture ? 'selected' : ''}>— No venture (Inbox)</option>
+          ${ventures.map(v => `<option value="${esc(v.id)}"${v.id===defaultVenture?' selected':''}>${esc(v.title)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="primary sm" onclick="createTask()">Create</button>
+      <button class="sm" onclick="closePanel()">Cancel</button>
+    </div>
+    <div id="panel-msg"></div>
+  `;
+}
+
+async function createTask() {
+  const msg = document.getElementById('panel-msg');
+  msg.className = '';
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { msg.className = 'err'; msg.textContent = 'Title is required'; return; }
+  try {
+    const created = await api('POST', '/tasks', {
+      venture_id:  document.getElementById('new-venture').value || null,
+      title,
+      description: document.getElementById('new-desc').value.trim() || null,
+      priority:    document.querySelector('input[name="new-priority-r"]:checked')?.value || null,
+      kind:        document.getElementById('new-kind').value,
+      domain:      document.getElementById('new-domain').value || null,
+      assignee:    document.getElementById('new-assignee').value || null,
+    });
+    if (!created) return;
+    tasks.push(created);
+    render();
+    openTask(created.id); // opens the panel + reflects ?task= in the URL
+  } catch(e) {
+    msg.className = 'err';
+    msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ---- mine filter ------------------------------------------------------------
+function toggleMine() {
+  mineFilter = !mineFilter;
+  document.getElementById('mine-btn').classList.toggle('active', mineFilter);
+  render();
+  replaceURL();
+}
+
+// ---- controls ---------------------------------------------------------------
+function refresh() { load(); }
+
+document.getElementById('venture-filter').addEventListener('change', e => {
+  ventureFilter = e.target.value;
+  render();
+  replaceURL();
+});
+
+document.getElementById('kind-filter').addEventListener('change', e => {
+  kindFilter = e.target.value;
+  render();
+  replaceURL();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePanel();
+  if (e.key === 'n' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
+    showNewTask();
+  }
+});
+
+document.querySelector('.controls').insertAdjacentHTML('beforeend',
+  '<button class="sm primary" onclick="showNewTask()">+ New task</button>'
+);
+
+// ---- boot -------------------------------------------------------------------
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+#
+# bin/operator-roll — one-shot ROLLING action runner over the fleet.
+#
+# For each operator (the holdco supervisor is hard-excluded), wait until it is
+# safely idle per the shared gate (bin/lib/operator-gate.sh) and then perform an
+# action — ONE operator at a time, so the fleet is never all-down at once. Use it
+# to roll out an operator-loop / persona / code change across every venture.
+#
+# USAGE:
+#   bin/operator-roll [--action restart|clear|'<keys>'] [--only id,id]
+#                     [--go] [--max-wait SECS] [--quiet-secs SECS]
+#
+#   --action   restart  (default) kill the tmux WINDOW (which kills operator-loop)
+#                       and relaunch via the canonical `bin/holdco run <id>`, then
+#                       confirm health (window + a live claude) before advancing.
+#              clear    inject `/clear` into the operator's pane (parity with
+#                       bin/clear-watch / bin/self-clear).
+#              '<keys>' any other value is treated as literal text to inject into
+#                       the pane via send-keys (+ Enter), e.g. --action '/compact'.
+#   --only     comma-separated venture ids to limit to (default: all LIVE operators
+#              except holdco).
+#   --go       (or --arm) execute. Without it, operator-roll is DRY-RUN: it prints
+#              the plan + what it WOULD do per operator and changes nothing.
+#   --max-wait seconds to wait for one operator to become safe before skipping it
+#              and moving on (default 900).
+#   --quiet-secs  min quiet seconds the pane must show before it counts as "safely
+#              between turns". Overrides the per-action default (below).
+#
+# QUIET THRESHOLD asymmetry (cost-aware):
+#   - clear   needs the COLD window (~COLD_AFTER, default 360s): clearing a warm
+#             operator forfeits a warm cache that could have served its next turn
+#             cheaply — only clear once the cache is already cold.
+#   - restart resumes the SAME session (--continue / --resume), so a prompt re-sent
+#             promptly HITS the warm server-side cache. Waiting the cold window makes
+#             a restart MORE expensive (forces a resume cache miss). So fire as soon
+#             as the operator is safely BETWEEN turns: a SHORT quiet
+#             (RESTART_QUIET_SECS, default 20s) — long enough to be confident it
+#             isn't mid-stream (streaming continuously bumps window_activity).
+#   - '<keys>' injection defaults to the SHORT threshold too (a turn boundary is all
+#             it needs); still overridable with --quiet-secs.
+#
+# Logs to ~/.cache/claude-usage/operator-roll.log and prints an end-of-run summary.
+#
+# CONFIG (env, all overridable): HOLDCO_TMUX_SESSION, COLD_AFTER, RESTART_QUIET_SECS,
+#   ROLL_MAX_WAIT, ROLL_POLL_SECS, ROLL_HEALTH_TIMEOUT, ROLL_HEALTH_POLL, CACHE_DIR,
+#   HOLDCO_BIN (the holdco CLI used for restart — overridable for testing).
+#
+# No `set -e`: a single operator failing/skipping must not abort the whole sweep.
+set -uo pipefail
+export LC_ALL=C
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/operator-gate.sh
+. "$REPO_ROOT/bin/lib/operator-gate.sh"
+
+SESSION="${HOLDCO_TMUX_SESSION:-holdco}"
+HOLDCO_BIN="${HOLDCO_BIN:-$REPO_ROOT/bin/holdco}"
+CACHE_DIR="${CACHE_DIR:-$HOME/.cache/claude-usage}"
+LOG_FILE="$CACHE_DIR/operator-roll.log"
+
+COLD_AFTER="${COLD_AFTER:-360}"               # quiet window for clear (cold cache)
+RESTART_QUIET_SECS="${RESTART_QUIET_SECS:-20}" # short quiet for restart/inject
+MAX_WAIT="${ROLL_MAX_WAIT:-900}"              # give up waiting for one operator after this
+POLL_SECS="${ROLL_POLL_SECS:-10}"            # gate re-poll interval while waiting
+HEALTH_TIMEOUT="${ROLL_HEALTH_TIMEOUT:-60}"  # confirm-health window after a restart
+HEALTH_POLL="${ROLL_HEALTH_POLL:-3}"         # health re-poll interval
+
+ACTION="restart" GO=0 ONLY="" QUIET_OVERRIDE=""
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--action) ACTION="${2:?--action needs a value}"; shift 2 ;;
+	--action=*) ACTION="${1#*=}"; shift ;;
+	--only) ONLY="${2:?--only needs a value}"; shift 2 ;;
+	--only=*) ONLY="${1#*=}"; shift ;;
+	--go | --arm) GO=1; shift ;;
+	--max-wait) MAX_WAIT="${2:?--max-wait needs a value}"; shift 2 ;;
+	--max-wait=*) MAX_WAIT="${1#*=}"; shift ;;
+	--quiet-secs) QUIET_OVERRIDE="${2:?--quiet-secs needs a value}"; shift 2 ;;
+	--quiet-secs=*) QUIET_OVERRIDE="${1#*=}"; shift ;;
+	-h | --help) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+	*) echo "operator-roll: unknown arg '$1'" >&2; exit 2 ;;
+	esac
+done
+
+# DISABLED 2026-06-28: the restart action caused a full fleet outage — it kills the
+# window then relaunches via `holdco run`, but that relaunch fails under operator-roll's
+# (redirected, non-interactive) context, so windows were killed and never came back.
+# Restart manually with `bin/holdco run <id>` (one venture at a time) until the relaunch
+# path is fixed and integration-tested against a throwaway window. See tasks/.
+if [ "$ACTION" = restart ]; then
+	echo "operator-roll: --action restart is DISABLED (it caused a fleet outage on 2026-06-28)." >&2
+	echo "  Its relaunch via 'holdco run' fails under operator-roll and leaves windows dead." >&2
+	echo "  Restart manually: bin/holdco run <id>   (one at a time). clear/inject still work." >&2
+	exit 2
+fi
+
+# Classify the action and pick its default quiet threshold.
+case "$ACTION" in
+restart) ACTION_KIND=restart; QUIET_DEFAULT="$RESTART_QUIET_SECS" ;;
+clear)   ACTION_KIND=clear;   QUIET_DEFAULT="$COLD_AFTER" ;;
+*)       ACTION_KIND=inject;  QUIET_DEFAULT="$RESTART_QUIET_SECS" ;;
+esac
+QUIET_SECS="${QUIET_OVERRIDE:-$QUIET_DEFAULT}"
+
+log() {
+	mkdir -p "$CACHE_DIR" 2>/dev/null
+	printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$1" >>"$LOG_FILE"
+}
+
+# Read one frontmatter KEY from a venture file (between the first two --- markers).
+roll_vfield() {
+	awk -v k="$1" '
+		NR==1 && $0=="---" { f=1; next }
+		f && $0=="---"     { exit }
+		f && index($0, k":")==1 {
+			v=substr($0, length(k)+2)
+			sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+			# Strip surrounding quotes. awk sub() has no \1 backref, so slice instead.
+			if (v ~ /^".*"$/ || v ~ /^'\''.*'\''$/) v=substr(v, 2, length(v)-2)
+			print v; exit
+		}' "$2"
+}
+
+tmux_windows() { tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null; }
+window_live() { tmux_windows | grep -qFx "$1"; }
+
+# Resolve an operator's tmux window name (first word of its title) and cwd.
+op_window() { local t; t="$(roll_vfield title "$1")"; [ -n "$t" ] || t="$2"; printf '%s' "${t%% *}"; }
+op_cwd() {
+	local repo; repo="$(roll_vfield repo "$1")"
+	case "$repo" in "~/"*) repo="$HOME/${repo#\~/}" ;; "~") repo="$HOME" ;; esac
+	[ -d "$repo" ] && { (cd "$repo" && pwd); return; }
+	printf '%s' "$repo"
+}
+
+# Run the shared gate once for one operator. Sets GATE_PANE + GATE_REASON; returns
+# 0 (safe) or 1 (skip, reason in GATE_REASON).
+GATE_PANE="" GATE_REASON=""
+gate_check() {
+	local id="$1" cwd="$2" now panes pane="" activity="" quiet reason
+	now="$(date +%s)"
+	panes="$(og_panes_snapshot)"
+	read -r pane activity < <(og_resolve_pane "$cwd" "$panes")
+	quiet="$(og_quiet_secs "$now" "$activity")"
+	GATE_PANE="$pane"
+	if reason="$(og_safe_to_act "$id" "$id" "$cwd" "$pane" "$quiet" "$QUIET_SECS" "$REPO_ROOT")"; then
+		GATE_REASON=""; return 0
+	fi
+	GATE_REASON="$reason"; return 1
+}
+
+# Poll the gate until safe, a PERMANENT skip, or max-wait. Sets WAIT_RESULT.
+WAIT_RESULT=""
+wait_until_safe() {
+	local id="$1" cwd="$2" start elapsed
+	start="$(date +%s)"
+	while :; do
+		if gate_check "$id" "$cwd"; then WAIT_RESULT="safe"; return 0; fi
+		case "$GATE_REASON" in
+		supervisor | opt-out | no-live-pane)
+			WAIT_RESULT="skipped:$GATE_REASON"; return 1 ;;  # permanent — don't wait
+		esac
+		elapsed=$(( $(date +%s) - start ))
+		if [ "$elapsed" -ge "$MAX_WAIT" ]; then
+			WAIT_RESULT="skipped:max-wait($GATE_REASON)"; return 1
+		fi
+		log "WAIT id=$id reason=$GATE_REASON quiet_secs=$QUIET_SECS elapsed=${elapsed}s — retry in ${POLL_SECS}s"
+		sleep "$POLL_SECS"
+	done
+}
+
+# A restarted operator is healthy once its window exists AND a claude agent is up
+# for its cwd (mirrors bin/holdco fleet's liveness signal).
+roll_healthy() {
+	local window="$1" cwd="$2"
+	window_live "$window" || return 1
+	claude agents --json --all 2>/dev/null | grep -qF "$cwd"
+}
+confirm_health() {
+	local window="$1" cwd="$2" start elapsed
+	start="$(date +%s)"
+	while :; do
+		roll_healthy "$window" "$cwd" && return 0
+		elapsed=$(( $(date +%s) - start ))
+		[ "$elapsed" -ge "$HEALTH_TIMEOUT" ] && return 1
+		sleep "$HEALTH_POLL"
+	done
+}
+
+# restart = kill the WINDOW (kills operator-loop too) + canonical relaunch + health.
+do_restart() {
+	local id="$1" window="$2" cwd="$3"
+	if window_live "$window"; then
+		tmux kill-window -t "$SESSION:$window" 2>/dev/null
+		log "RESTART id=$id killed window '$window'"
+	fi
+	"$HOLDCO_BIN" run "$id" >>"$LOG_FILE" 2>&1
+	log "RESTART id=$id relaunched via 'holdco run' — confirming health (timeout ${HEALTH_TIMEOUT}s)"
+	confirm_health "$window" "$cwd"
+}
+
+send_keys() {  # literal text + Enter, same pattern as clear-watch / bin/self-clear
+	local pane="$1" text="$2"
+	tmux send-keys -t "$pane" -l "$text" 2>/dev/null && tmux send-keys -t "$pane" Enter 2>/dev/null
+}
+
+# ---- build the target list --------------------------------------------------
+
+declare -A only_set=()
+if [ -n "$ONLY" ]; then
+	IFS=',' read -ra _ids <<<"$ONLY"
+	for _x in "${_ids[@]}"; do [ -n "$_x" ] && only_set["$_x"]=1; done
+fi
+
+targets=()
+shopt -s nullglob
+for vf in "$REPO_ROOT"/ventures/*.md; do
+	base="$(basename "$vf" .md)"
+	case "$base" in _*) continue ;; esac
+	id="$(roll_vfield id "$vf")"; [ -n "$id" ] || id="$base"
+	[ "$id" = "${OG_SUPERVISOR:-holdco}" ] && continue   # supervisor exclude
+	if [ -n "$ONLY" ]; then
+		[ -n "${only_set[$id]:-}" ] || continue
+	else
+		window_live "$(op_window "$vf" "$id")" || continue   # default: live operators only
+	fi
+	targets+=("$id")
+done
+
+# ---- plan header ------------------------------------------------------------
+
+mode="DRY-RUN (no changes — pass --go to execute)"; [ "$GO" = 1 ] && mode="ARMED (--go)"
+echo "operator-roll: action=$ACTION_KIND  quiet_secs=$QUIET_SECS  max_wait=${MAX_WAIT}s  $mode"
+[ "$ACTION_KIND" = inject ] && echo "  inject text: $ACTION"
+if [ "${#targets[@]}" -eq 0 ]; then
+	echo "  targets: (none — no matching live operators)"
+	exit 0
+fi
+echo "  targets (one at a time, in order): ${targets[*]}"
+echo
+
+# ---- sweep — strictly one operator at a time --------------------------------
+
+results=()
+for id in "${targets[@]}"; do
+	vf="$REPO_ROOT/ventures/$id.md"
+	window="$(op_window "$vf" "$id")"
+	cwd="$(op_cwd "$vf")"
+
+	if [ "$GO" != 1 ]; then
+		# Dry-run: a SINGLE gate check, no waiting, no side effects.
+		if gate_check "$id" "$cwd"; then
+			printf '  %-18s WOULD %-8s quiet_secs=%-4s pane=%s\n' "$id" "$ACTION_KIND" "$QUIET_SECS" "$GATE_PANE"
+			results+=("$id|$ACTION_KIND|would-act")
+		else
+			printf '  %-18s WOULD skip: %-22s quiet_secs=%s\n' "$id" "$GATE_REASON" "$QUIET_SECS"
+			results+=("$id|$ACTION_KIND|would-skip:$GATE_REASON")
+		fi
+		continue
+	fi
+
+	wait_until_safe "$id" "$cwd"
+	if [ "$WAIT_RESULT" != safe ]; then
+		printf '  %-18s SKIP %s\n' "$id" "$WAIT_RESULT"
+		log "SKIP id=$id action=$ACTION_KIND result=$WAIT_RESULT"
+		results+=("$id|$ACTION_KIND|$WAIT_RESULT")
+		continue
+	fi
+	pane="$GATE_PANE"
+
+	case "$ACTION_KIND" in
+	restart)
+		if do_restart "$id" "$window" "$cwd"; then
+			printf '  %-18s restart: done (healthy)\n' "$id"
+			results+=("$id|restart|done")
+			log "DONE id=$id action=restart"
+		else
+			printf '  %-18s restart: FAILED (no health after %ss)\n' "$id" "$HEALTH_TIMEOUT"
+			results+=("$id|restart|failed:no-health")
+			log "FAIL id=$id action=restart reason=no-health"
+		fi ;;
+	clear)
+		if send_keys "$pane" "/clear"; then
+			printf '  %-18s clear: done (pane=%s)\n' "$id" "$pane"
+			results+=("$id|clear|done"); log "DONE id=$id action=clear pane=$pane"
+		else
+			printf '  %-18s clear: FAILED (send-keys)\n' "$id"
+			results+=("$id|clear|failed:send-keys"); log "FAIL id=$id action=clear pane=$pane"
+		fi ;;
+	inject)
+		if send_keys "$pane" "$ACTION"; then
+			printf '  %-18s inject: done (pane=%s)\n' "$id" "$pane"
+			results+=("$id|inject|done"); log "DONE id=$id action=inject pane=$pane"
+		else
+			printf '  %-18s inject: FAILED (send-keys)\n' "$id"
+			results+=("$id|inject|failed:send-keys"); log "FAIL id=$id action=inject pane=$pane"
+		fi ;;
+	esac
+done
+
+# ---- summary table ----------------------------------------------------------
+
+echo
+printf '  %-18s %-9s %s\n' "OPERATOR" "ACTION" "RESULT"
+printf '  %-18s %-9s %s\n' "--------" "------" "------"
+for r in "${results[@]}"; do
+	IFS='|' read -r rid ract rres <<<"$r"
+	printf '  %-18s %-9s %s\n' "$rid" "$ract" "$rres"
+done
