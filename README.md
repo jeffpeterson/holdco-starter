@@ -29,6 +29,25 @@ command**.
   **whois** (`bin/holdco domain`), **codex** (second engine + image generation).
 - Linux is recommended — the supervisor's orphan-reaping uses `/proc`.
 
+## Install
+
+**This repo IS your holdco.** Clone it to **`~/code/holdco`** — that exact path is
+strongly recommended:
+
+```
+git clone <your-repo-url> ~/code/holdco
+cd ~/code/holdco
+bin/bootstrap
+```
+
+The operator personas and fleet tooling reference holdco by the absolute path
+`~/code/holdco` (e.g. `~/code/holdco/bin/email`, `~/code/holdco/bin/holdco`, and
+sourcing `~/code/holdco/.env`). Venture repos are created as **siblings** under
+`~/code/` by default (e.g. `~/code/acme`). If you install holdco anywhere else,
+those cross-repo paths in operator personas won't resolve and fleet tooling calls
+will break — so `~/code/holdco` is the canonical home. `bin/bootstrap` warns if it
+detects holdco living elsewhere.
+
 ## Setup
 
 ```
