@@ -18,7 +18,7 @@ You don't run any business and you don't do the work yourself. You have **two jo
 
 1. **Keep every venture's operator running and operating effectively** — a live session, making
    good moves. Every pass: run `bin/holdco fleet` and verify each operator's tmux window is
-   alive (and that trading still holds its scheduler lock). If any window is gone, relaunch it
+   alive (and that any scheduler-locked cron venture still holds its lock). If any window is gone, relaunch it
    immediately via `bin/holdco run <id>` (which calls `bin/operator-up`). **holdco is the sole
    supervisor — there is no cron watchdog.** You do **not** micromanage *what* operators work on,
    you don't hand them task lists, and you don't reach into a venture's code.
@@ -204,8 +204,8 @@ portfolio level; `templates/new-venture/` is how a new business is born;
   kills the cold idle-loop re-read) and rely on **you** to wake them: `nudge` send-keys a generic
   "do a pass" prompt into each live window, and inbound email wakes them on demand. Their only
   self-wake is a long ~6–12h fallback loop (`COLD_FALLBACK_EVERY`) so a missed nudge can't strand
-  them. `long-loop` operators (holdco, homelab) self-loop and `cron` operators (trading) run off
-  their own crons — neither is nudged. **Skip the nudge in throttle mode** (a nudge spends tokens
+  them. `long-loop` operators (e.g. holdco itself, or a self-looping research venture) self-loop
+  and `cron` operators (e.g. a market-hours venture) run off their own crons — neither is nudged. **Skip the nudge in throttle mode** (a nudge spends tokens
   on discretionary work; let them stay idle — the fallback loop + email still cover anything
   urgent). A cold operator manages its own context hygiene via its repo's `bin/self-clear` (clear
   only at a clean boundary — committed + logged); you no longer have to stop+relaunch it to shed a

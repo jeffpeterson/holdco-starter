@@ -6,7 +6,7 @@ Decision record (2026-06-25, verified firsthand against Claude Code v2.1.191). H
 ## TL;DR — operators run as named tmux windows
 
 **Each venture's operator runs as a tmux window named after the FIRST WORD of the venture
-`title` (e.g. `"Trading Desk"` → tab `"Trading"`, `"Acme"` → tab `"Acme"`)
+`title` (e.g. `"Acme Labs"` → tab `"Acme"`, `"Acme"` → tab `"Acme"`)
 in the owner's attached session, launched with `claude --remote-control "<Full Title> Operator"`
 so it is remote-chattable from claude.ai/code or the mobile app.** The holdco supervisor's own
 window is always `"HoldCo"`. The short tab name is what you see in tmux; the long
@@ -37,12 +37,12 @@ Operators run a **continuous self-paced loop** — the `/loop /clear` opening pr
 rest; repeat indefinitely. Each pass starts with a clean context (`/clear`). If a GOAL is provided via
 `GOAL=…`, the prompt becomes `/loop /clear <GOAL>` instead.
 
-Exception: a venture may use a **time-of-day cron cadence** where that fits the domain (e.g. Trading
-Desk runs on market-hours ticks via its own `CronCreate` jobs — leave that mechanism alone; holdco
-just supervises the window, not the scheduling).
+Exception: a venture may use a **time-of-day cron cadence** where that fits the domain (e.g. a
+market-hours venture runs on market-hours ticks via its own `CronCreate` jobs — leave that mechanism
+alone; holdco just supervises the window, not the scheduling).
 
 - **Tab name convention:** `title.split.first` — first word of the venture `title`, capitalised
-  as written in the frontmatter. `"Trading Desk"` → `"Trading"`, `"Acme"` → `"Acme"`.
+  as written in the frontmatter. `"Acme Labs"` → `"Acme"`, `"Acme"` → `"Acme"`.
   The holdco window is always `"HoldCo"` (set by `bin/holdco-up`).
 - **Target session** defaults to `holdco` (the owner's attached session); override with
   `HOLDCO_TMUX_SESSION`.  If the session doesn't exist (e.g. @reboot), it is created detached.
@@ -59,7 +59,7 @@ just supervises the window, not the scheduling).
 ## The mechanism (verified firsthand)
 
 - **Dispatch:** `tmux new-window -t <session> -n "<first-word-of-title>" -c <repo> claude --remote-control "<Full Title> Operator" …`
-  opens a new tmux tab (labelled with the first word of the title, e.g. `"Trading"`) visible to
+  opens a new tmux tab (labelled with the first word of the title, e.g. `"Acme"`) visible to
   the owner. `--remote-control "<Title> Operator"` registers the session under that conversation
   name so it's findable via claude.ai/code or mobile. The session persists as long as the tmux
   window is open. `-c <repo>` sets the working directory so the persona path and all venture
@@ -155,7 +155,7 @@ launched **through `bin/operator-loop`**, a tiny bash supervisor that wraps the 
   design, so to take an operator offline kill its tmux **window** (`bin/holdco shutter <id>`),
   which kills the wrapper too.
 
-This is the **proactive/graceful** layer; **earlyoom** (`-r 3600`, installed by homelab) is the
+This is the **proactive/graceful** layer; **earlyoom** (`-r 3600`, installed on-box) is the
 last-resort backstop that kills a runaway if it somehow still races past the cap.
 
 ## Cost / observability
@@ -207,7 +207,7 @@ operator stays available. Lessons learned:
   durable but run in Anthropic's cloud → no access to local CLIs/keys.
 - **BUT in-session crons DO fire in a `--remote-control` session** (verified: a probe fired a 1-min
   job 3×; only `--bg` headless doesn't fire them). This enables the **self-healing operator-crons
-  pattern** (Trading Desk uses it — better than dumb system cron when the cadence should adapt): the
+  pattern** (a market-hours venture uses it — better than dumb system cron when the cadence should adapt): the
   operator runs continuously (`--remote-control` in tmux), owns its cadence via its own `CronCreate`
   jobs, keeps a git-tracked **manifest** (`.claude/crons.md`) as source of truth, and **self-heals**
   on every session start (read manifest → `CronList` → re-create missing, dedupe by cron+prompt since

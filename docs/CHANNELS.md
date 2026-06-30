@@ -38,12 +38,12 @@ From `code.claude.com/docs/en/channels` + `…/channels-reference`:
     method: "notifications/claude/channel",
     params: {
       content: "<the event body>",
-      meta: { from: "trading@bot.example.com", msg_id: "…", subj: "…", auth: "VERIFIED(bot.example.com)" },
+      meta: { from: "acme@bot.example.com", msg_id: "…", subj: "…", auth: "VERIFIED(bot.example.com)" },
     },
   })
   ```
   Rendered into the session as:
-  `<channel source="email" from="trading@bot.example.com" msg_id="…" subj="…" auth="VERIFIED(bot.example.com)">…body…</channel>`.
+  `<channel source="email" from="acme@bot.example.com" msg_id="…" subj="…" auth="VERIFIED(bot.example.com)">…body…</channel>`.
   `meta` keys must be `[A-Za-z0-9_]` (hyphens are dropped); each becomes an attribute. **Put
   attacker-controlled metadata in `meta`, never hand-built into `content`** (forged-attribute
   defense).
@@ -168,7 +168,7 @@ auto-landing to internal-only.
 ### Sender display + reply routing — a small additive Worker enhancement
 
 For a clean sender label and correct reply-to, the channel wants the **header `From:`** and
-`Reply-To:` of fleet mail (e.g. `trading@bot.example.com`), but the Worker stores only the
+`Reply-To:` of fleet mail (e.g. `acme@bot.example.com`), but the Worker stores only the
 **envelope** `from` (the bounce address for Cloudflare-sent mail). Fix: have the inbox Worker also
 persist `from_header` and `reply_to` on each KV record (additive, backward-compatible). The channel
 server prefers `reply_to || from_header || from` for both the `from=` attribute and the reply tool's

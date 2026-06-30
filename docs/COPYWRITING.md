@@ -254,7 +254,7 @@ Marketing-facing ventures get it; infra/non-marketing ones are exempt.
 | a launching consumer venture | launching | Full rollout — highest priority (live-facing copy now) |
 | a venture building toward launch | building | Full rollout before launch |
 | an incubating venture | incubating | Author `BRAND.md` as part of its business plan; persona ships when it greenlights |
-| a live infra/trading venture | live | **Exempt** — no outward marketing copy |
+| a live infra/ops venture (no public surface) | live | **Exempt** — no outward marketing copy |
 
 Mechanism, per the CLAUDE.md meta-role (change the operator durably; don't hand-feed tasks):
 

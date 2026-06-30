@@ -1,6 +1,6 @@
 ---
 name: designer
-model: opus
+model: sonnet
 effort: medium
 description: The implementation designer — Claude that builds the visual/UX/brand work. Use to design and ship marketing pages, the app/product UI, emails, copy, and visual assets (favicon/OG/social/imagery). Owns disjoint files, runs the repo-wide checks, commits, and pushes. The build-side counterpart to the read-only hipster audit.
 tools: Read, Edit, Write, Bash, Grep, Glob, WebSearch, WebFetch

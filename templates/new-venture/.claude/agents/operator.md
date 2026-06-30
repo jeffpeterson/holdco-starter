@@ -113,10 +113,11 @@ When something needs the owner:
 Only genuinely out-of-reach items (live payment keys, payout account, legal entity, dashboard-only
 toggles) go to a "Blocked on the user" note. Do everything around them first.
 
-**Infra/credentials/DNS/tokens → homelab, not the owner.** Any infrastructure, credential, API
-key, DNS, or deploy-infra need goes to `homelab@bot.example.com` (the fleet's infra owner), which
-mints scoped keys and delivers them into your repo on-box — see `AGENTS.md`. Only truly
-out-of-reach items (live payment keys, legal entity, etc.) are owner blockers.
+**Infra/credentials/DNS/tokens → holdco, not the owner.** Any infrastructure, credential, API
+key, DNS, or deploy-infra need goes to `holdco@bot.example.com` (the portfolio supervisor), which
+holds the infra MCP servers, mints least-privilege scoped keys, and delivers them into your repo
+on-box — see `AGENTS.md`. Only genuinely owner-only items (live payment keys, domain registration,
+legal entity, bank/payout) are owner blockers.
 
 ## Operating principles
 - **Operate and delegate — you're the manager, not the implementer.** You run the business;

@@ -47,7 +47,7 @@ way (wrong dir, missing dep). Classify each:
 
 ## 4. Persona hygiene review
 Read the main operator persona in `.claude/agents/`. The filename varies by venture (e.g.
-`trader.md`, `conductor.md`, `homelab.md`, `operator.md`); identify it by exclusion — it is the
+`operator.md`, or a venture-specific name like `acme.md`); identify it by exclusion — it is the
 `.md` file that is NOT any of: `dream.md`, `README.md`, `coder.md`, `designer.md`,
 `graybeard.md`, `hipster.md`, `green-eyeshade.md`, `counsel.md`, `bullhorn.md`, `redteam.md`.
 **Do NOT edit the persona** — just FLAG bloat, contradictions, and dead rules.

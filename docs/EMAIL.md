@@ -36,7 +36,7 @@ actor — **no new DNS per operator**:
 |-------|---------|
 | Owner | `${OWNER_EMAIL}` (e.g. `owner@example.com`) |
 | holdco (portfolio operator) | `holdco@bot.example.com` |
-| Each venture operator | `<id>@bot.example.com` (e.g. `trading@`, `acme@`) |
+| Each venture operator | `<id>@bot.example.com` (e.g. `acme@`, `widgets@`) |
 
 Every fleet address is on the **already-verified** sending subdomain, so any
 `<id>@bot.example.com` is DKIM-signed by the same domain and shares one reputation/DMARC signal.
@@ -138,7 +138,7 @@ owner-spoofing case, and worth doing.
 ```
 bin/email "subject" "body"                                   # holdco@ → owner default
 bin/email --to acme@bot.example.com "subj" "body"            # holdco@ → another operator
-bin/email --from trading@bot.example.com --to holdco@bot.example.com "subj" "body"
+bin/email --from acme@bot.example.com --to holdco@bot.example.com "subj" "body"
 EMAIL_DRY=1 bin/email …                                      # validate the payload, don't send
 ```
 

@@ -189,7 +189,7 @@ belt-and-suspenders default.
 For holdco's own high-stakes calls, include `ultrathink` in the prompt:
 
 ```text
-ultrathink — should we kill the Trading Desk venture or double down?
+ultrathink — should we kill the Acme venture or double down?
 ```
 
 This raises reasoning depth on that one turn without touching the session setting.

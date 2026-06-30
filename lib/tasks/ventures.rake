@@ -139,7 +139,7 @@ namespace :ventures do
   end
 
   # All tmux window names in the target session (operator windows are named after
-  # the first word of the venture title, e.g. "Trading"). Used for idempotency + fleet matching.
+  # the first word of the venture title, e.g. "Acme"). Used for idempotency + fleet matching.
   def tmux_window_names(session)
     raw = `tmux list-windows -t #{session.shellescape} -F '\#{window_name}' 2>/dev/null`
     raw.split("\n").map(&:strip).reject(&:empty?)
@@ -199,7 +199,7 @@ namespace :ventures do
     abort "No operator persona under #{repo}/.claude/agents/ (operator.md or #{v[:meta]['operator']}.md)" unless persona
 
     title  = v[:meta]["title"] || id
-    window = title.split.first        # first word of title as the tmux tab name (e.g. "Trading")
+    window = title.split.first        # first word of title as the tmux tab name (e.g. "Acme")
     remote = "#{title} Operator"      # long --remote-control conversation name
     # This operator's own email-channel inbox (matches bin/holdco operator_address +
     # the Email Routing rules: one rule per operator, <id>@<FLEET_EMAIL_DOMAIN> → inbox Worker).

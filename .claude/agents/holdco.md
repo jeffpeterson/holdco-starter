@@ -21,8 +21,8 @@ When told to "continue portfolio operation" (or run with no other instruction), 
 and remember you **delegate almost everything to subagents** so you stay free to communicate:
 
 1. **Assess the fleet + surface asks.** `bin/holdco fleet` (truth) + `PORTFOLIO.md`. For each
-   live/launching/building venture, verify its tmux window is **up** (and, for trading, that it
-   still holds its scheduler lock). If any window is gone, relaunch it immediately via
+   live/launching/building venture, verify its tmux window is **up** (and, for any scheduler-locked
+   cron venture, that it still holds its lock). If any window is gone, relaunch it immediately via
    `bin/holdco run <id>` (calls `bin/operator-up`). **holdco is the sole supervisor — no cron
    watchdog exists.** **Also keep the cost watcher installed:** run `bin/clear-watch-up`
    (idempotent — installs/refreshes the per-minute cron entry that runs one `bin/clear-watch`
@@ -45,8 +45,9 @@ and remember you **delegate almost everything to subagents** so you stay free to
    `mode: cold` operator's live window so it does proactive backlog work. Cold/reactive operators
    don't self-loop frequently (they go idle after each pass to save the cold re-read), so **you own
    their proactive cadence** — nudge them each normal pass; **less often in throttle mode (below).**
-   `bin/holdco fleet` shows each operator's `mode`; `long-loop` (holdco, homelab) self-loops and
-   `cron` (trading) runs off its own crons — neither needs nudging.
+   `bin/holdco fleet` shows each operator's `mode`; `long-loop` (e.g. holdco itself, or a
+   self-looping research venture) self-loops and `cron` (e.g. a market-hours venture) runs off its
+   own crons — neither needs nudging.
 2. **Don't micromanage what operators work on.** Their backlog is theirs. If an operator keeps
    making the wrong call, fix it **durably** — edit its persona/`AGENTS.md` and gracefully
    restart it (`bin/holdco stop <id>` → `bin/holdco run <id>`) — not with a one-off goal that

@@ -75,7 +75,7 @@ def sessions_by_repo
 end
 
 # All tmux window names in the target session (operator windows are named after
-# the venture id, e.g. "trading").
+# the venture id, e.g. "acme").
 def tmux_window_names(session)
   raw = `tmux list-windows -t #{session.shellescape} -F '\#{window_name}' 2>/dev/null`
   raw.split("\n").map(&:strip).reject(&:empty?)
@@ -198,10 +198,10 @@ def operator_address(v) = "#{operator_window(v).downcase}@#{fleet_email_domain}"
 # An operator's cadence mode (frontmatter `mode`), defaulting to the legacy
 # long-loop. Drives who holdco nudges (cold) vs leaves to self-loop (long-loop) vs
 # leaves to its own crons (cron). See docs/COST.md + ventures:run.
-#   long-loop  self-paced /loop — keeps waking on its own (holdco, homelab)
+#   long-loop  self-paced /loop — keeps waking on its own (e.g. holdco itself)
 #   cold       reactive: woken by `bin/holdco nudge` + email; only self-wake is a
 #              long fallback loop (COLD_FALLBACK_EVERY) so a missed nudge can't strand it
-#   cron       event-driven off its own crons (trading) — holdco doesn't nudge
+#   cron       event-driven off its own crons (e.g. a market-hours venture) — holdco doesn't nudge
 def operator_mode(v) = (v["mode"].to_s.strip.empty? ? "long-loop" : v["mode"].to_s.strip)
 
 # Deliver each RUNNING operator's unread fleet-domain mail into its tmux session as a
