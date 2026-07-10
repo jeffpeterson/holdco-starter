@@ -19,7 +19,7 @@ status" step adds zero tokens; "high" on "design the auth architecture" adds a l
 |-------|-------------|-------|
 | `low` | Latency-sensitive, non-intelligence-sensitive tasks | Rarely think at all |
 | `medium` | Cost-sensitive; can trade some intelligence | Light thinking |
-| `high` | **Default on Opus 4.8, Sonnet 4.6, Fable 5** | Balanced; right for most tasks |
+| `high` | **Default on Opus 4.8, Sonnet 4.6** | Balanced; right for most tasks |
 | `xhigh` | Deeper reasoning, higher spend | Not available on Sonnet 4.6 (falls back to `high`) |
 | `max` | Deepest reasoning, no token constraint | No budget cap; prone to overthinking on simple tasks |
 | `ultracode` | `xhigh` + dynamic workflow orchestration per task | Claude Code-only; session-only; not settable in frontmatter |
@@ -32,7 +32,6 @@ matrix).
 
 | Model | Supported levels | Default |
 |-------|-----------------|---------|
-| Fable 5 | low, medium, high, xhigh, max | high |
 | Opus 4.8 | low, medium, high, xhigh, max | high |
 | Sonnet 4.6 | low, medium, high, **max** (no xhigh) | high |
 | Opus 4.6 | low, medium, high, max (no xhigh) | high |
@@ -200,8 +199,8 @@ This raises reasoning depth on that one turn without touching the session settin
 
 ```
 Model tier ──────────────────────────────────────────────────────────▶ more capable, pricier
-  Haiku      Sonnet      Opus      Fable
-  (scouts)   (panel)   (ops/build)  (reserved)
+  Haiku      Sonnet      Opus
+  (scouts)   (panel)   (ops/build)
 
 Effort ──────────────────────────────────────────────────────────────▶ more thinking, pricier
   low    medium    high    xhigh    max    ultracode

@@ -18,8 +18,8 @@
 # OWNER_EMAIL. Both are read from .env (see .env.example / docs/EMAIL.md).
 #
 # Credentials (first hit wins; both also readable from holdco .env, gitignored):
-#   CLOUDFLARE_EMAIL_TOKEN  — scoped Email Sending Write token (yaks account only)
-#   HOLDCO_CF_ACCOUNT_ID    — Cloudflare account ID (yaks)
+#   CLOUDFLARE_EMAIL_TOKEN  — scoped Email Sending Write token (your account only)
+#   HOLDCO_CF_ACCOUNT_ID    — Cloudflare account ID
 #
 # Replies route via Cloudflare Email Routing → holdco-inbox Worker → KV; read with
 # bin/email-inbox. See docs/EMAIL.md.
