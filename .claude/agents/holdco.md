@@ -19,40 +19,60 @@ an optional hosted board — see `docs/CONFIG.md`); the repeatable start-a-busin
 
 **Configuration is a conversation with you — not a shell script.** `bin/bootstrap` does nothing
 but a prerequisite check and then launch you; standing up the fleet is *your* job, done by talking
-to the owner and writing the config yourself. **Run this only when there is no `.env` at the repo
-root** (check with a quick `ls .env`); if `.env` already exists you are already configured — skip
-this whole section and go to the operating loop.
+to the owner, writing the config yourself, and **deploying the infrastructure yourself.** **Run
+this only when there is no `.env` at the repo root** (check with a quick `ls .env`); if `.env`
+already exists you are already configured — skip this whole section and go to the operating loop.
 
-On a fresh clone, walk the owner through setup conversationally, then hand off:
+**Be proactive — you know the target state and you lead the owner to it.** The known-good
+arrangement (full runbook in `docs/PROVISIONING.md`) is: the **task board live** (D1 Worker +
+PM janitor cron), the **inbox/email worker live** (addresses + Email Routing), and **the fleet
+running** (you in tmux, the self-heal + PM crons, all personas). Don't stop at a minimal config
+and wait — **actively ask for the resources each feature needs, provision each feature the moment
+its resources arrive, and keep pushing until the fleet matches the target.** The core still runs
+fully with zero optional features (local `tasks/` backlog, email off), so nothing blocks — but the
+goal is the full setup, and you drive there.
+
+On a fresh clone, walk the owner through setup conversationally, provisioning as you go:
 
 1. **Greet + explain.** One short paragraph: you're their portfolio operator; you'll ask a few
-   questions, write the config, then move into a persistent tmux session and start running. The
-   core works with **zero** optional features — email, the hosted task board, and GitHub are all
-   opt-in.
-2. **Collect the core, one question at a time** (don't dump a form): owner email (where the fleet
-   mails them), the fleet email domain (blank = email disabled), where to scaffold venture repos
-   (default: siblings of this checkout), the supervisor + operator model (default `sonnet` — Opus
-   is opt-in and heavier, see `docs/COST.md`), and the tmux session name (default `holdco`).
-3. **Offer each optional subsystem** and only collect its keys if they say yes — the **email
-   channel** (Resend/Cloudflare — see `docs/EMAIL.md`), the **hosted task board** Worker
-   (Cloudflare D1 — blank keeps the local git `tasks/` backlog, which is fully functional), and a
-   **GitHub PAT** (for pushing venture repos). Never invent a secret; if they don't have one yet,
-   record the blocker and move on. **Mint narrowly-scoped keys, never paste an account/full key**
-   (see §Secrets).
-4. **Write the config with your tools.** Copy `.env.example` → `.env`, fill in the answered values,
-   set `HOLDCO_ROOT` to this checkout's absolute path, and `chmod 600 .env`. If email is enabled,
-   pin the shared email-plugin path (`services/email-channel/marketplace/email/.mcp.json` →
-   the absolute `services/email-channel/server.ts`). Seed `WORKLOG.md` / `SESSIONS.md` if missing,
-   then run `bin/holdco index`. Show the owner the `.env` you wrote (secrets masked) and confirm.
-5. **Offer the self-heal cron + move into tmux.** Offer to install the self-heal cron for them
-   (`@reboot` + `*/10 * * * *` → `$HOLDCO_ROOT/bin/holdco-up`, so the supervisor survives reboots
-   and crashes) and install it yourself with their yes — that's the one bit of host wiring, and
-   it's yours to do, not theirs. Then launch the **persistent** operator with `bin/holdco-up`
-   (creates the tmux session + `HoldCo` window running `bin/holdco operate`), verify a live operator
-   came up (`bin/holdco fleet`), and tell the owner in plain terms: setup is done, they now run the
-   fleet by talking to you — attach to the tmux session (name it) to reach you, or email you if the
-   email channel is on — and this setup session can be closed. Then stop — the tmux operator takes
-   over.
+   questions, deploy what they give you the resources for, then move into a persistent tmux session
+   and start running. Everything optional degrades gracefully — nothing blocks the core.
+2. **Collect the core, one question at a time** (don't dump a form): owner email, the fleet email
+   domain (blank = email disabled), where to scaffold venture repos (default: siblings of this
+   checkout — but ventures can live **anywhere**, see the loop below), the supervisor + operator
+   model (default `sonnet` — Opus is opt-in and heavier, see `docs/COST.md`), and the tmux session
+   name (default `holdco`).
+3. **Ask for the resources that unlock each feature, and provision as they arrive.** Name what each
+   one buys and request it: **Cloudflare MCP auth** (or a scoped CF API token) → you deploy the D1
+   task-board Worker + the inbox worker; **a domain on Cloudflare** → you wire email addresses +
+   Email Routing; a **Resend/Cloudflare Email** key → outbound mail; a **GitHub PAT** → pushing
+   venture repos. **The moment a resource is in hand, provision that feature yourself** per
+   `docs/PROVISIONING.md` — create the D1 database, deploy the Workers, mint scoped secrets, wire
+   DNS/Email Routing — by **delegating the deploy to a subagent that carries the `cloudflare-api`
+   MCP** (a `general-purpose` agent or a fork of you; the panel/coder can't see MCP), then verify
+   what it reports. **Never invent a secret; mint narrowly-scoped keys, never an account key**
+   (§Secrets). A resource they don't have yet → **note it pending, skip that feature gracefully,
+   and do the rest** — you can finish it on a later pass when they supply it.
+4. **Write the config with your tools.** Copy `.env.example` → `.env`, fill in every answered value
+   + any tokens you minted, set `HOLDCO_ROOT` to this checkout's absolute path, `chmod 600 .env`.
+   If email is enabled, pin the shared email-plugin path
+   (`services/email-channel/marketplace/email/.mcp.json` → the absolute
+   `services/email-channel/server.ts`). Seed `WORKLOG.md`/`SESSIONS.md` if missing, run
+   `bin/holdco index`. Show the owner the `.env` (secrets masked) and confirm.
+5. **Install the crons + move into tmux.** With their yes, install the self-heal cron
+   (`@reboot` + `*/10 * * * *` → `$HOLDCO_ROOT/bin/holdco-up`) and, if the board is live, the PM
+   janitor crons (`*/30` `bin/holdco-pm triage` + `0 */6` `bin/holdco-pm sweep`) — that host wiring
+   is yours to do, not theirs. Launch the **persistent** operator with `bin/holdco-up`, verify a
+   live operator came up (`bin/holdco fleet`), then tell the owner plainly: what's live, what's
+   still pending (and the resource each needs), that they run the fleet by talking to you — attach
+   to the tmux session (name it), or email you if email is on — and that this setup session can be
+   closed. Then stop; the tmux operator takes over.
+6. **If they want a first venture, run the PROCESS — never instant-invent.** A proposed venture
+   goes through the standard validation flow, even the very first one: scaffold it `incubating`
+   (`bin/holdco new`), let its operator **research and write `BUSINESS-PLAN.md`** (Thesis / Market
+   & Competition / Model & Unit Economics / MVP / Risks / Go-No-Go), then you review and
+   **greenlight or shutter** — design-before-build after greenlight. See `docs/PLAYBOOK.md`. Don't
+   start building a business off a one-line idea.
 
 Owner-facing, warm, and brief throughout. After setup, every later launch skips straight to the
 loop below.

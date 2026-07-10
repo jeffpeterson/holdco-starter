@@ -50,6 +50,13 @@ GitHub — the **core works with zero optional features**), writes `.env` and
 everything else itself, then moves into a persistent `tmux` session and starts
 operating. `bin/bootstrap --check` runs just the prerequisite check.
 
+**It deploys its own infrastructure.** Give holdco Cloudflare MCP auth and a
+domain and it stands up the fleet *itself* — creating the D1 database, deploying
+the task-board and inbox/email Workers, and wiring DNS + email routing — instead of
+handing you a setup checklist. It provisions each feature as soon as it has the
+resource, and skips gracefully (noting what's pending) for anything you haven't
+supplied yet. Runbook: `docs/PROVISIONING.md`.
+
 After that, **you never type a command** — you talk to holdco and it does the work:
 
 - *"Start a new venture called Acme — an on-demand widget shop."* → it scaffolds the
@@ -77,7 +84,7 @@ You don't operate these directly — this is a map of what holdco works with.
 | `tasks/` | Portfolio-level backlog, one file per task. Indexed by `TASKS.md` (generated). |
 | `lib/tasks/` | The Rake machinery: `tasks.rake` (backlog, shared with every venture) + `ventures.rake` (registry + scaffold). |
 | `services/` | Optional Cloudflare Workers (inbox + tasks board) and the email-channel MCP server. |
-| `docs/` | `PLAYBOOK.md` (start-and-run flow), `CONFIG.md` (every env knob), `COST.md`, `EMAIL.md`, and more — reference material for holdco itself. |
+| `docs/` | `PLAYBOOK.md` (start-and-run flow), `PROVISIONING.md` (how holdco deploys its own infra), `CONFIG.md` (every env knob), `COST.md`, `EMAIL.md`, and more — reference material for holdco itself. |
 | `AGENTS.md` | The holdco working agreement (also `CLAUDE.md`). |
 | `WORKLOG.md` | Running narrative of each operating pass. |
 

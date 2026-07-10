@@ -45,6 +45,12 @@ Your subagents run the **same model you do**; trust them.
   don't trust a restricted agent's story of *why* a tool-gated action failed — verify the gate.
 - **`codex` is a tool too** — uniquely generates images via `$imagegen`, and serves as a second
   implementation/diagnosis engine. It's on a shared $20/mo plan, so watch usage.
+- **Design before build.** Before building anything non-trivial, run a design session — real
+  thinking AND research (alternatives, prior art, gaps) — **record the plan** in
+  `docs/designs/<name>.md`, file the tasks, THEN dispatch a builder. Never send a `coder` straight
+  from an idea. The plan organizes your thinking, not an approval gate: design, then build
+  autonomously. (While incubating, this is the BUSINESS-PLAN step; after greenlight, it's per
+  non-trivial feature.)
 - **Code directly only for trivial glue** (a task-file edit, a one-line config/doc tweak,
   regenerating `rake tasks:index`). When in doubt, delegate.
 - **Fan out research with clean-context subagents** for any non-trivial question or decision.

@@ -16,7 +16,9 @@ Every new venture starts as **incubating**. The operator writes `BUSINESS-PLAN.m
 touching any code. holdco reviews the plan — using the panel if useful — and either:
 
 - **Greenlights:** edit `ventures/<id>.md`, set `status: building`, run `bin/holdco index`.
-  The operator resumes normal operation.
+  The operator resumes normal operation — and **design-before-build applies from here**: for any
+  non-trivial feature it runs a design session (thinking + research), records the plan in
+  `docs/designs/`, files tasks, THEN dispatches a builder. Never code straight from an idea.
 - **Shutters:** `bin/holdco shutter <id>` — stops the operator, marks the venture shuttered,
   appends a postmortem stub. The repo is preserved (archived in place).
 
@@ -29,10 +31,16 @@ step. holdco scaffolds, reviews, and decides; the operator researches and writes
 bin/holdco new <name> "Display Title" "one-line tagline"
 ```
 
-This stamps `templates/new-venture/` into `~/code/<name>` (override the location with
-`VENTURES_ROOT`), fills in the placeholders, `git init`s it, seeds its `TASKS.md`, makes the
-first commit, and registers it in `ventures/<name>.md` + `PORTFOLIO.md` with status
-**`incubating`**.
+This stamps `templates/new-venture/` into a **sibling of holdco** by default (holdco at
+`/path/to/holdco` → new venture at `/path/to/<name>`), fills in the placeholders, `git init`s it,
+seeds its `TASKS.md`, makes the first commit, and registers it in `ventures/<name>.md` +
+`PORTFOLIO.md` with status **`incubating`**.
+
+**Ventures can live ANYWHERE.** The default is a sibling; override the location for one venture
+with `VENTURE_PATH=/abs/path`, or for all with `VENTURES_ROOT`. An existing repo anywhere on disk
+is registered as-is with `bin/holdco register <id> "Title" /abs/path/to/repo`. Every fleet tool
+resolves a venture by its stored `repo:` path in `ventures/<id>.md` — never a fixed root — so
+`bin/holdco run/fleet/stop` all work regardless of where the repo lives.
 
 What you get in the new repo:
 - **`AGENTS.md`** (+ `CLAUDE.md` symlink) — the business's working agreement. **Edit this first**

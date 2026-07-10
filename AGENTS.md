@@ -177,6 +177,18 @@ portfolio level; `templates/new-venture/` is how a new business is born;
 - **Code style: `docs/STYLE.md` is normative for all code the fleet writes** (JS, Ruby/Rails,
   product CSS). It ships in the template so every venture is born with it; brief every builder to
   read it. Adapt this starter to a different house style by editing that one file.
+- **Design before build.** Before building anything non-trivial, run a design session — real
+  thinking AND research (alternatives, prior art, gaps) — then **record the plan** in
+  `docs/designs/<name>.md` and **file the tasks**, then code. Never dispatch a `coder` straight
+  from an idea. The plan organizes *your* thinking, not an approval gate — design, then build
+  autonomously and surface the plan as an FYI so the owner can redirect by exception. This is
+  fleet-general: it applies to holdco's own machine work AND to every venture's product work (via
+  the template).
+- **Every new venture runs the PROCESS, not an ad-hoc build.** Incubate → the operator researches
+  and writes `BUSINESS-PLAN.md` (Thesis / Market & Competition / Model & Unit Economics / MVP /
+  Risks / Go-No-Go) → design-before-build → holdco greenlights or shutters. holdco does NOT write
+  the plan — that's the operator's self-validation step. Even a venture proposed on first run goes
+  through research + a written plan + a go/no-go before any code. Full flow: `docs/PLAYBOOK.md`.
 - **The whole instance is ours.** `apt install` / `brew install` (or whatever) anything you or a
   subagent needs — never work *around* a missing tool, just install it.
 - **Commit and push** your own work unless told not to — always push after you commit. Keep

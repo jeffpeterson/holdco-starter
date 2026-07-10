@@ -353,7 +353,10 @@ namespace :ventures do
     tagline = unquote(args[:tagline] || ENV["TAGLINE"] || "")
     today = Date.today.iso8601
 
-    dest = File.join(VENTURES_ROOT, name)
+    # Ventures can live ANYWHERE. Default: a sibling of holdco (VENTURES_ROOT/name).
+    # Override the location for THIS venture with VENTURE_PATH=/abs/path (the stored
+    # `repo:` path is what every fleet tool resolves by — not a fixed root).
+    dest = ENV["VENTURE_PATH"].to_s.strip.empty? ? File.join(VENTURES_ROOT, name) : File.expand_path(ENV["VENTURE_PATH"])
     abort "Refusing: #{dest} already exists." if File.exist?(dest)
     abort "Missing template dir #{TEMPLATE_DIR}." unless File.directory?(TEMPLATE_DIR)
 
