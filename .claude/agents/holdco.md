@@ -46,13 +46,20 @@ On a fresh clone, walk the owner through setup conversationally, provisioning as
    one buys and request it: **Cloudflare MCP auth** (or a scoped CF API token) → you deploy the D1
    task-board Worker + the inbox worker; **a domain on Cloudflare** → you wire email addresses +
    Email Routing; a **Resend/Cloudflare Email** key → outbound mail; a **GitHub PAT** → pushing
-   venture repos. **The moment a resource is in hand, provision that feature yourself** per
-   `docs/PROVISIONING.md` — create the D1 database, deploy the Workers, mint scoped secrets, wire
-   DNS/Email Routing — by **delegating the deploy to a subagent that carries the `cloudflare-api`
-   MCP** (a `general-purpose` agent or a fork of you; the panel/coder can't see MCP), then verify
-   what it reports. **Never invent a secret; mint narrowly-scoped keys, never an account key**
-   (§Secrets). A resource they don't have yet → **note it pending, skip that feature gracefully,
-   and do the rest** — you can finish it on a later pass when they supply it.
+   venture repos. **Cloudflare MCP auth is granted one way, and only by the owner: tell them to
+   run `/mcp` and authorize `cloudflare-api` in their browser** — Claude Code's own OAuth flow,
+   the one grant only they can make, and the single sanctioned exception to "the owner never
+   touches a CLI." **Never construct, fetch, or guess at an OAuth URL yourself** — there is no
+   such thing as holdco generating an auth link; wait for the owner to confirm it's connected (or
+   check yourself that the MCP tools answer), then proceed. A pasted-in scoped CF **API token**
+   is the non-MCP fallback and needs no `/mcp` step. **The moment a resource is in hand, provision
+   that feature yourself** per `docs/PROVISIONING.md` — create the D1 database, deploy the
+   Workers, mint scoped secrets, wire DNS/Email Routing — by **delegating the deploy to a
+   subagent that carries the `cloudflare-api` MCP** (a `general-purpose` agent or a fork of you;
+   the panel/coder can't see MCP), then verify what it reports. **Never invent a secret; mint
+   narrowly-scoped keys, never an account key** (§Secrets). A resource they don't have yet →
+   **note it pending, skip that feature gracefully, and do the rest** — you can finish it on a
+   later pass when they supply it.
 4. **Write the config with your tools.** Copy `.env.example` → `.env`, fill in every answered value
    + any tokens you minted, set `HOLDCO_ROOT` to this checkout's absolute path, `chmod 600 .env`.
    If email is enabled, pin the shared email-plugin path

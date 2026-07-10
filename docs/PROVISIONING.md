@@ -38,13 +38,21 @@ backlog with email disabled.
 Detect what's present (`.env`, whether the `cloudflare-api` MCP answers, whether a zone exists for
 the domain) and provision accordingly. Missing one → note it as pending, do the rest.
 
+**Getting the Cloudflare MCP auth is the one step only the owner can perform.** MCP OAuth is a
+grant Claude Code runs in the owner's browser and stores in its own credential store — holdco
+never constructs, fetches, or guesses at an OAuth URL itself; there is no such thing as holdco
+generating an auth link. Ask the owner to run **`/mcp`** and authorize `cloudflare-api`, wait for
+them to confirm it's connected, then holdco takes it from there automatically. This is the one
+sanctioned exception to "the owner never touches a CLI" — every other step below is holdco's job.
+
 ## How holdco provisions (drive the `cloudflare-api` MCP; wrangler is the equivalent fallback)
 
-Provisioning needs the `cloudflare-api` MCP, which only a `general-purpose` agent or a fork of
-holdco carries — so **delegate the deploy to such a subagent** (that IS you, with the tools),
-verify what it reports, and record the result. Where MCP auth is absent but a scoped CF **token**
-is in `.env`, the same steps run through the bundled `wrangler` deploy scripts instead — pick
-whichever the available resource supports.
+Once the MCP auth is granted (above) or a scoped CF **token** is in `.env`, provisioning needs the
+`cloudflare-api` MCP, which only a `general-purpose` agent or a fork of holdco carries — so
+**delegate the deploy to such a subagent** (that IS you, with the tools), verify what it reports,
+and record the result. Where MCP auth is absent but the token is present, the same steps run
+through the bundled `wrangler` deploy scripts instead — pick whichever the available resource
+supports.
 
 ### Feature: task board (needs Cloudflare)
 

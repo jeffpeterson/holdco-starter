@@ -50,14 +50,17 @@ GitHub — the **core works with zero optional features**), writes `.env` and
 everything else itself, then moves into a persistent `tmux` session and starts
 operating. `bin/bootstrap --check` runs just the prerequisite check.
 
-**It deploys its own infrastructure.** Give holdco Cloudflare MCP auth and a
-domain and it stands up the fleet *itself* — creating the D1 database, deploying
-the task-board and inbox/email Workers, and wiring DNS + email routing — instead of
-handing you a setup checklist. It provisions each feature as soon as it has the
-resource, and skips gracefully (noting what's pending) for anything you haven't
-supplied yet. Runbook: `docs/PROVISIONING.md`.
+**It deploys its own infrastructure.** Run **`/mcp`** and authorize `cloudflare-api`
+in your browser — Claude Code's own auth grant, the one step only you can do — give
+holdco a domain, and it stands up the fleet *itself*: creating the D1 database,
+deploying the task-board and inbox/email Workers, and wiring DNS + email routing —
+instead of handing you a setup checklist. It provisions each feature as soon as it
+has the resource, and skips gracefully (noting what's pending) for anything you
+haven't supplied yet. Runbook: `docs/PROVISIONING.md`.
 
-After that, **you never type a command** — you talk to holdco and it does the work:
+After that, **you never type a command — except `/mcp`**, Claude Code's built-in MCP
+auth flow, which only you can run and which is the one CLI step holdco can never do
+for you. Everything else, you talk to holdco and it does the work:
 
 - *"Start a new venture called Acme — an on-demand widget shop."* → it scaffolds the
   repo, registers it, and boots its operator.
