@@ -163,7 +163,7 @@ Skills and agent-team mechanics complement each other cleanly:
   `!`bin/holdco fleet`` doesn't duplicate logic — it surfaces the output in-session while
   the Ruby code remains the single source of truth.
 - **`!`command`` injection is the glue.** Skills can pull live data (fleet status, portfolio
-  frontmatter, current diff, Linear issues) directly into the prompt before Claude sees it.
+  frontmatter, current diff, open board tasks) directly into the prompt before Claude sees it.
   This is how a `/board-review` skill can load the target venture's frontmatter without Claude
   having to know where to look.
 

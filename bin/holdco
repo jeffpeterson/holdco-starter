@@ -642,10 +642,35 @@ def cmd_api_asks
   end
 end
 
-def cmd_api_done(id)
+def cmd_api_done(id, reason: nil)
   result = TasksAPI.patch("/tasks/#{id}", { "status" => "done" })
   return unless result
+  TasksAPI.post("/tasks/#{id}/comments", { "author" => "pm", "body" => reason }) if reason
   puts green("  ✓ #{result['title']}")
+end
+
+# Board mutation verbs used by the PM board-janitor (and available to holdco).
+# A `reason:`, when given, lands as a timeline comment on the task (audit trail).
+def cmd_api_update(id, fields, reason: nil)
+  die("no fields to update") if fields.empty?
+  result = TasksAPI.patch("/tasks/#{id}", fields)
+  return unless result
+  TasksAPI.post("/tasks/#{id}/comments", { "author" => "pm", "body" => reason }) if reason
+  puts green("  ✓ #{result['id']}  #{fields.keys.join(', ')}")
+end
+
+def cmd_api_cancel(id, reason: nil)
+  result = TasksAPI.patch("/tasks/#{id}", { "status" => "cancelled" })
+  return unless result
+  TasksAPI.post("/tasks/#{id}/comments", { "author" => "pm", "body" => reason }) if reason
+  puts green("  ✓ cancelled #{result['id']}")
+end
+
+def cmd_api_comment(id, body)
+  die("comment body required") if body.to_s.strip.empty?
+  result = TasksAPI.post("/tasks/#{id}/comments", { "author" => "pm", "body" => body })
+  return unless result
+  puts green("  ✓ comment on #{id}")
 end
 
 def cmd_api_create(title, venture_id, priority: "P2", domain: nil, body: nil)
@@ -915,7 +940,10 @@ def usage
     #{b.call('Tasks API')} #{d.call('(optional tasks Worker — set TASKS_WORKER_URL; falls back to local tasks/)')}
       bin/holdco api:tasks [--venture id] [--status open]
       bin/holdco api:task <venture_id> <title> [--priority P1] [--domain Eng]
-      bin/holdco api:done <task_id>
+      bin/holdco api:update <id> [--venture X] [--priority P2] [--kind task] [--domain Eng] [--status open] [--owner] [--reason "..."]
+      bin/holdco api:cancel <id> --reason "..."
+      bin/holdco api:comment <id> "text"
+      bin/holdco api:done <task_id> [--reason "..."]
       bin/holdco api:import                    one-time import of all git tasks/ → D1
 
     #{b.call('Domain')}
@@ -1030,8 +1058,37 @@ when "api:task"
   end
   cmd_api_create(title, venture_id, priority: priority, domain: domain)
 when "api:done"
-  id = ARGV.shift or die("usage: bin/holdco api:done <task_id>")
-  cmd_api_done(id)
+  id = ARGV.shift or die("usage: bin/holdco api:done <task_id> [--reason \"...\"]")
+  reason = nil
+  while (a = ARGV.shift)
+    reason = ARGV.shift if a == "--reason"
+  end
+  cmd_api_done(id, reason: reason)
+when "api:update"
+  id = ARGV.shift or die("usage: bin/holdco api:update <id> [--venture X] [--priority P2] [--kind task] [--domain Eng] [--status open] [--owner] [--reason \"...\"]")
+  fields = {}; reason = nil
+  while (a = ARGV.shift)
+    case a
+    when "--venture"  then fields["venture_id"]      = ARGV.shift
+    when "--priority" then fields["priority"]        = ARGV.shift
+    when "--kind"     then fields["kind"]            = ARGV.shift
+    when "--domain"   then fields["domain"]          = ARGV.shift
+    when "--status"   then fields["status"]          = ARGV.shift
+    when "--owner"    then fields["blocked_on_user"] = true
+    when "--reason"   then reason                    = ARGV.shift
+    end
+  end
+  cmd_api_update(id, fields, reason: reason)
+when "api:cancel"
+  id = ARGV.shift or die("usage: bin/holdco api:cancel <id> --reason \"...\"")
+  reason = nil
+  while (a = ARGV.shift)
+    reason = ARGV.shift if a == "--reason"
+  end
+  cmd_api_cancel(id, reason: reason)
+when "api:comment"
+  id = ARGV.shift or die("usage: bin/holdco api:comment <id> \"text\"")
+  cmd_api_comment(id, ARGV.join(" "))
 when "api:import"
   cmd_tasks_import
 when "domain"

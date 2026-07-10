@@ -1,297 +1,60 @@
-#!/usr/bin/env ruby
-# frozen_string_literal: true
+#!/usr/bin/env bash
 #
-# bin/bootstrap — one-command, idempotent setup for a fresh holdco clone.
+# bin/bootstrap — the ONE command to stand up a fresh holdco clone.
 #
-# Checks prerequisites, walks you through config, writes .env, wires machine-local
-# paths, seeds the empty state, and prints the manual next-steps it can't automate.
-# Re-run any time: it reuses your existing .env values as defaults and never
-# duplicates anything.
+# There is deliberately NO config Q&A here. Configuration is a CONVERSATION with
+# Claude, not a shell script: this does a bare prerequisite check, then launches
+# `claude` with the holdco persona in first-run setup mode. The operator then
+# walks you through the fleet (owner email, models, and the optional email
+# channel / task board / GitHub), writes .env and everything else with its own
+# tools, moves itself into a persistent tmux session, and starts operating.
 #
-#   bin/bootstrap            # interactive setup
-#   bin/bootstrap --check    # prerequisite checks only (non-interactive, CI-safe)
+#   bin/bootstrap          launch the first-run setup conversation
+#   bin/bootstrap --check  prerequisite check only (non-interactive, CI-safe)
 #   bin/bootstrap --help
 #
-require "fileutils"
+set -euo pipefail
 
-ROOT = File.expand_path("..", __dir__)
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
-# ---- tiny tty helpers -------------------------------------------------------
-TTY = $stdout.tty?
-def color(code, s) = TTY ? "\e[#{code}m#{s}\e[0m" : s
-def bold(s)  = color("1", s)
-def green(s) = color("32", s)
-def yellow(s) = color("33", s)
-def red(s)   = color("31", s)
-def dim(s)   = color("2", s)
-def hr = puts(dim("─" * 64))
-def say(s) = puts(s)
-def head(s) = (puts; puts(bold(s)); hr)
-
-# ---- arg parsing ------------------------------------------------------------
-if ARGV.include?("--help") || ARGV.include?("-h")
-  puts <<~USAGE
-    bin/bootstrap — idempotent setup for a fresh holdco clone.
-
-      bin/bootstrap            interactive setup (config + .env + wiring + seed)
-      bin/bootstrap --check    prerequisite checks only (non-interactive)
-      bin/bootstrap --help     this message
-
-    Core works with ZERO optional features. The email channel and the two
-    Cloudflare Workers are opt-in; bin/bootstrap only collects their keys if you
-    say yes. See README.md and docs/CONFIG.md.
-  USAGE
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
-end
-CHECK_ONLY = ARGV.include?("--check")
-INTERACTIVE = !CHECK_ONLY && $stdin.tty?
+fi
 
-# ---- prerequisite checks ----------------------------------------------------
-def have?(cmd) = system("command -v #{cmd} > /dev/null 2>&1")
+# ---- bare prerequisite check ------------------------------------------------
+case "$(uname -s)" in
+  Linux) ;;
+  *) echo "! Not Linux ($(uname -s)). The /proc-based orphan reaping in bin/holdco is" >&2
+     echo "  Linux-only; supervision may misbehave on this platform." >&2 ;;
+esac
 
-errors = []
-head "Prerequisites"
-
-unless RUBY_PLATFORM.include?("linux")
-  say yellow("  !  Not Linux (#{RUBY_PLATFORM}). The /proc-based orphan reaping in bin/holdco")
-  say yellow("     is Linux-only; supervision may misbehave on this platform.")
-end
-
-# Hard requirements.
-{
-  "claude" => "Claude Code — https://docs.claude.com/en/docs/claude-code",
-  "tmux"   => "tmux — apt install tmux  /  brew install tmux",
-  "ruby"   => "Ruby — apt install ruby  /  brew install ruby",
-  "rake"   => "Rake — gem install rake",
-  "git"    => "git — apt install git  /  brew install git",
-}.each do |cmd, hint|
-  if have?(cmd)
-    say green("  ✓ #{cmd}")
-  else
-    say red("  ✗ #{cmd} — required. Install: #{hint}")
-    errors << cmd
-  end
-end
-
-# claude extras (warn-only — can't reliably detect plan tier).
-if have?("claude")
-  ver = `claude --version 2>/dev/null`.strip
-  say dim("    #{ver}") unless ver.empty?
-  say yellow("    ! Verify you're logged in (`claude` once interactively) and that your")
-  say yellow("      plan can run the configured model. Opus is heavier — see docs/COST.md.")
-end
-
-# Warn-only probes.
-{
-  "bun"   => "needed for the email-channel MCP server + Worker dev (curl -fsSL https://bun.sh/install | bash)",
-  "gh"    => "GitHub CLI — needed to create/push venture repos (https://cli.github.com)",
-  "whois" => "needed for `bin/holdco domain` availability checks (apt install whois)",
-  "codex" => "OpenAI Codex CLI — optional second engine + image generation",
-}.each do |cmd, why|
-  if have?(cmd)
-    say green("  ✓ #{cmd} #{dim('(optional)')}")
-  else
-    say yellow("  ~ #{cmd} missing #{dim("(optional) — #{why}")}")
-  end
-end
-if have?("gh")
-  ok = system("gh auth status > /dev/null 2>&1")
-  say(ok ? green("    ✓ gh authenticated") : yellow("    ~ gh not authenticated (run `gh auth login` before pushing repos)"))
-end
-
-unless errors.empty?
-  puts
-  say red("Missing required tools: #{errors.join(', ')}. Install them and re-run bin/bootstrap.")
+missing=()
+for c in claude git ruby rake tmux; do
+  command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  echo "bootstrap: missing required tools: ${missing[*]}" >&2
+  echo "  claude → https://docs.claude.com/en/docs/claude-code" >&2
+  echo "  the rest → apt install <tool>  /  brew install <tool>" >&2
   exit 1
-end
+fi
 
-# Location-independent: holdco runs from wherever it was cloned. We record that
-# absolute path as HOLDCO_ROOT (see below) and default new ventures to siblings of
-# it. Both are overridable in .env (VENTURES_ROOT).
-VENTURES_DEFAULT = File.dirname(ROOT)
-puts
-say dim("  Detected holdco at #{ROOT}; ventures will be created as siblings under #{VENTURES_DEFAULT} (override VENTURES_ROOT in .env).")
-
-if CHECK_ONLY
-  puts
-  say green("All required prerequisites present.")
+if [ "${1:-}" = "--check" ]; then
+  echo "bootstrap: prerequisites present (claude git ruby rake tmux)."
+  echo "  Run bin/bootstrap with no args to start the setup conversation."
   exit 0
-end
+fi
 
-# ---- read existing .env (for idempotent re-runs) ----------------------------
-ENV_FILE = File.join(ROOT, ".env")
-EXAMPLE  = File.join(ROOT, ".env.example")
-existing = {}
-if File.exist?(ENV_FILE)
-  File.readlines(ENV_FILE).each do |line|
-    next if line.strip.empty? || line.lstrip.start_with?("#")
-    k, v = line.chomp.split("=", 2)
-    existing[k] = v.to_s.gsub(/\A["']|["']\z/, "") if k
-  end
-end
+command -v claude >/dev/null 2>&1 || { echo "bootstrap: claude not found" >&2; exit 1; }
 
-# Collected values (seeded from existing .env so re-runs keep your answers).
-vals = existing.dup
-
-def ask(prompt, default)
-  d = default.to_s
-  print "  #{prompt}#{d.empty? ? '' : " [#{dim(d)}]"}: "
-  ans = $stdin.gets&.strip.to_s
-  ans.empty? ? d : ans
-end
-
-def ask_secret(prompt, default)
-  shown = default.to_s.empty? ? "" : "[#{default[0,4]}…set]"
-  print "  #{prompt} #{dim(shown)}: "
-  ans = $stdin.gets&.strip.to_s
-  ans.empty? ? default.to_s : ans
-end
-
-def yes?(prompt, default_yes: false)
-  suffix = default_yes ? "[Y/n]" : "[y/N]"
-  print "  #{prompt} #{suffix}: "
-  ans = $stdin.gets&.strip.to_s.downcase
-  return default_yes if ans.empty?
-  ans.start_with?("y")
-end
-
-unless INTERACTIVE
-  say yellow("\nNon-interactive shell — skipping prompts. Writing .env from defaults/existing.")
-end
-
-if INTERACTIVE
-  head "Core configuration"
-  vals["OWNER_EMAIL"]        = ask("Owner email (where the fleet mails you)", existing["OWNER_EMAIL"] || "owner@example.com")
-  vals["FLEET_EMAIL_DOMAIN"] = ask("Fleet email domain (blank = email disabled)", existing["FLEET_EMAIL_DOMAIN"] || "")
-  vals["VENTURES_ROOT"]      = ask("Where to scaffold new venture repos", existing["VENTURES_ROOT"] || File.dirname(ROOT))
-  vals["HOLDCO_TMUX_SESSION"] = ask("tmux session name", existing["HOLDCO_TMUX_SESSION"] || "holdco")
-  vals["HOLDCO_MODEL"]       = ask("Supervisor model (sonnet recommended; opus opt-in)", existing["HOLDCO_MODEL"] || "sonnet")
-  vals["OP_MODEL"]           = ask("Operator model", existing["OP_MODEL"] || vals["HOLDCO_MODEL"] || "sonnet")
-
-  head "Optional: email channel (Resend + Cloudflare)"
-  say dim("  Lets operators email you and each other. Needs a domain + verified sending")
-  say dim("  subdomain in Cloudflare/Resend and a deployed inbox Worker. See docs/EMAIL.md.")
-  if yes?("Enable the email channel?")
-    vals["CLOUDFLARE_EMAIL_TOKEN"]    = ask_secret("Cloudflare Email Send token", existing["CLOUDFLARE_EMAIL_TOKEN"])
-    vals["HOLDCO_CF_ACCOUNT_ID"]      = ask("Cloudflare account ID", existing["HOLDCO_CF_ACCOUNT_ID"])
-    vals["HOLDCO_INBOX_KV_NAMESPACE"] = ask("Inbox Worker KV namespace ID", existing["HOLDCO_INBOX_KV_NAMESPACE"])
-    vals["HOLDCO_INBOX_CF_TOKEN"]     = ask_secret("Inbox Worker CF token (Workers KV: Edit)", existing["HOLDCO_INBOX_CF_TOKEN"])
-    if (vals["FLEET_EMAIL_DOMAIN"] || "").empty?
-      vals["FLEET_EMAIL_DOMAIN"] = ask("Fleet email domain (required for email)", "bot.example.com")
-    end
-  end
-
-  head "Optional: tasks board Worker (Cloudflare D1)"
-  say dim("  A hosted kanban board + API. Blank = local git tasks/ backlog (fully functional).")
-  if yes?("Enable the tasks Worker?")
-    vals["TASKS_WORKER_URL"]      = ask("Tasks Worker base URL", existing["TASKS_WORKER_URL"])
-    vals["CLOUDFLARE_TASKS_TOKEN"] = ask_secret("Cloudflare tasks token (Workers+D1: Edit)", existing["CLOUDFLARE_TASKS_TOKEN"])
-    vals["TASKS_OWNER_TOKEN"]     = ask_secret("Tasks API owner token", existing["TASKS_OWNER_TOKEN"])
-    vals["TASKS_AGENT_TOKEN"]     = ask_secret("Tasks API agent token", existing["TASKS_AGENT_TOKEN"])
-  end
-
-  head "Optional: GitHub"
-  if yes?("Set a GitHub PAT now (for pushing venture repos)?")
-    vals["GITHUB_PAT"] = ask_secret("GitHub PAT (repo + workflow)", existing["GITHUB_PAT"])
-  end
-end
-
-# Always record where this holdco checkout lives so venture tooling can resolve it.
-vals["HOLDCO_ROOT"] = ROOT
-
-# ---- write .env (from .env.example, overlaying collected values) ------------
-head "Writing .env"
-template = File.exist?(EXAMPLE) ? File.read(EXAMPLE) : ""
-# Replace each KEY= line we have a value for; leave the rest (comments/blanks) intact.
-lines = template.lines.map do |line|
-  if line =~ /^([A-Z][A-Z0-9_]*)=/ && vals.key?($1)
-    "#{$1}=#{vals[$1]}\n"
-  else
-    line
-  end
-end
-# Append any keys we collected that the template didn't define (defensive).
-have_keys = template.scan(/^([A-Z][A-Z0-9_]*)=/).flatten
-extra = vals.keys - have_keys
-unless extra.empty?
-  lines << "\n# --- added by bin/bootstrap ---\n"
-  extra.each { |k| lines << "#{k}=#{vals[k]}\n" }
-end
-if File.exist?(ENV_FILE)
-  FileUtils.cp(ENV_FILE, "#{ENV_FILE}.bak")
-  say dim("  backed up existing .env → .env.bak")
-end
-File.write(ENV_FILE, lines.join)
-File.chmod(0o600, ENV_FILE)
-say green("  ✓ wrote .env (chmod 600)")
-
-# ---- wire machine-local paths -----------------------------------------------
-# The statusline + hooks use ${CLAUDE_PROJECT_DIR}, which Claude Code expands to
-# this repo for holdco's own session. The email plugin's server.ts, however, is
-# shared by every venture session (whose CLAUDE_PROJECT_DIR points at THAT venture),
-# so pin it to this repo's absolute path.
-head "Wiring local paths"
-mcp = File.join(ROOT, "services", "email-channel", "marketplace", "email", ".mcp.json")
-if File.exist?(mcp)
-  body = File.read(mcp)
-  abs  = File.join(ROOT, "services", "email-channel", "server.ts")
-  new  = body.gsub(%r{(\$\{CLAUDE_PROJECT_DIR\}|/[^"]*?)/services/email-channel/server\.ts}, "#{abs}")
-  if new != body
-    File.write(mcp, new)
-    say green("  ✓ pinned email plugin server.ts → #{abs}")
-  else
-    say dim("  email plugin path already pinned")
-  end
-end
-
-# ---- seed empty state + index -----------------------------------------------
-head "Seeding state"
-wl = File.join(ROOT, "WORKLOG.md")
-unless File.exist?(wl)
-  File.write(wl, "# Holdco — Worklog\n\nNewest first. Append a short entry every pass.\n")
-  say green("  ✓ seeded WORKLOG.md")
-end
-ss = File.join(ROOT, "SESSIONS.md")
-unless File.exist?(ss)
-  File.write(ss, "# Sessions\n\n| date | who | session | notes |\n|------|-----|---------|-------|\n")
-  say green("  ✓ seeded SESSIONS.md")
-end
-if system(File.join(ROOT, "bin", "holdco"), "index")
-  say green("  ✓ bin/holdco index")
-else
-  say yellow("  ~ bin/holdco index returned non-zero (check output above)")
-end
-
-# ---- manual next steps ------------------------------------------------------
-head "Next steps (things bootstrap can't automate)"
-puts <<~NEXT
-  Core is ready. To boot the supervisor and start your first venture:
-
-    #{green('./holdco')}                                  # boot the portfolio operator
-    #{green('bin/holdco new acme "Acme" "a tagline"')}    # scaffold your first venture
-
-  Self-healing (recommended): add cron so the supervisor survives reboots/crashes.
-    crontab -e, then add:
-      @reboot      #{ROOT}/bin/holdco-up
-      */10 * * * * #{ROOT}/bin/holdco-up
-    (Without this, holdco does not come back after a reboot — it is the only
-     thing guarding the whole fleet. Optional cost auto-clear: bin/clear-watch-up.)
-
-  If you enabled the EMAIL channel (Phase 2):
-    - Register/verify your domain + sending subdomain in Cloudflare (or Resend).
-    - Deploy the inbox Worker:  cd services/inbox-worker && bunx wrangler deploy
-      (create a KV namespace first; paste its id into .env + wrangler.toml).
-    - Add Cloudflare Email Routing rules: <id>@#{vals['FLEET_EMAIL_DOMAIN'].to_s.empty? ? '<your-domain>' : vals['FLEET_EMAIL_DOMAIN']} → the inbox Worker.
-    - See docs/EMAIL.md for the full walkthrough.
-
-  If you enabled the TASKS board Worker (Phase 2):
-    - Create a D1 database; paste its id into services/tasks/wrangler.toml.
-    - Deploy:  cd services/tasks && bunx wrangler deploy   (set TASKS_WORKER_URL in .env)
-
-  Per-venture gates only you can clear: registering domains, payment/API keys,
-  and forming a legal entity. Track them as blockers per venture, not blockers
-  to starting.
-
-  Read README.md (esp. the SAFETY section) before running unattended.
-NEXT
-say green("\nbootstrap complete.")
+# ---- hand off to Claude: configuration is a conversation --------------------
+# Launch an interactive claude in THIS terminal, seeded with the first-run
+# instruction. The persona's "First-run setup" section drives the rest: it
+# configures the fleet with you, writes .env, then relaunches itself in tmux as
+# the persistent operator (bin/holdco-up) and hands off.
+exec claude \
+  --append-system-prompt-file .claude/agents/holdco.md \
+  --model "${HOLDCO_MODEL:-sonnet}" \
+  "This is a FRESH holdco clone and there is no .env yet. Run FIRST-RUN SETUP now, exactly per the 'First-run setup' section of your persona: configure the fleet with me conversationally, write .env and any other config with your own tools, then create the tmux session and relaunch yourself there as the persistent operator, and hand off to your normal operating loop."

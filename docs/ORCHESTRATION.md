@@ -183,7 +183,7 @@ operator stays available. Lessons learned:
   a lesser one. Brief at the goal level and let them gather their own files/tools. If one can't find
   what it needs, fix its **persona**, not the prompt.
 - **Agent type gates tool access.** "Full abilities" holds only for `general-purpose` and a fork of
-  holdco — those carry the MCP servers (cloudflare-api, resend, github, linear, railway, stripe,
+  holdco — those carry the MCP servers (cloudflare-api, resend, github, railway, stripe,
   whose OAuth grants live in the shared session credential store). The builders (`coder`/`designer`)
   and the read-only panel (graybeard/hipster/green-eyeshade/counsel/bullhorn/redteam) are restricted
   to code tools and **can't see MCP**. Pick `general-purpose`/fork when the job needs an MCP server;

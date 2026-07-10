@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+#
+# bin/holdco-pm — the fleet's scheduled board janitor (cron). Two modes, both
+# BASH-GATED so the model spins up only when there is real work — the gate is what
+# keeps a Sonnet-backed janitor affordable.
+#
+#   bin/holdco-pm triage   (cron */30)  drain the inbox: route every no-venture open
+#                                        task, fill priority/kind/domain.
+#                                        GATE: skip (no model) when the inbox is empty
+#                                        — the dominant steady state, so this is ~free.
+#   bin/holdco-pm sweep    (cron 6h)     maintain the whole open board: proof-gated
+#                                        closes, dedup, split too-big tasks, metadata
+#                                        hygiene. GATE: skip (no model) when the open
+#                                        board is UNCHANGED since the last successful
+#                                        sweep (signature compare) — so once swept
+#                                        clean it stays quiet until someone touches it.
+#
+# Requires the hosted task board (TASKS_WORKER_URL set). With the local git tasks/
+# backlog there is no board janitor — this exits 0 without spinning up any model.
+#
+# On a gate-pass it invokes `claude` headless (-p, bypassPermissions) with the PM
+# persona (.claude/agents/pm.md) as the system prompt, does ONE pass, and appends the
+# result to logs/pm.log. Idempotent — safe every N min. The PM only ever mutates the
+# BOARD (a remote API); it never edits repo files, so it does not collide with
+# holdco's own live working tree.
+#
+# See docs/designs/pm-board-maintenance.md.
+set -uo pipefail
+export LC_ALL=C
+
+# Minimal-cron PATH (mirrors holdco-up) so claude/ruby/git resolve from a bare cron
+# env (cron PATH is just /usr/bin:/bin). Uses $HOME — no hardcoded user path.
+export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:${PATH:-}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT" || exit 1
+
+MODE="${1:-}"
+MODEL="${HOLDCO_PM_MODEL:-sonnet}"
+HOLDCO="$REPO_ROOT/bin/holdco"
+PERSONA="$REPO_ROOT/.claude/agents/pm.md"
+LOG="${HOLDCO_PM_LOG:-$REPO_ROOT/logs/pm.log}"
+STATE_DIR="${HOLDCO_PM_STATE_DIR:-$HOME/.cache/holdco-pm}"
+RUN_TIMEOUT="${HOLDCO_PM_TIMEOUT:-600}"   # cap a hung headless session
+
+# Load .env so TASKS_WORKER_URL / TASKS_AGENT_TOKEN are visible (bin/holdco loads it
+# too, but we need TASKS_WORKER_URL here for the board gate).
+[ -f "$REPO_ROOT/.env" ] && set -a && . "$REPO_ROOT/.env" && set +a
+
+log() {
+	mkdir -p "$(dirname "$LOG")" 2>/dev/null
+	printf '%s pm[%s] %s\n' "$(date '+%FT%T')" "${MODE:-?}" "$*" >>"$LOG" 2>/dev/null || true
+}
+
+case "$MODE" in
+	triage | sweep) ;;
+	*) echo "usage: bin/holdco-pm <triage|sweep>" >&2; exit 2 ;;
+esac
+
+# Board required — with the local tasks/ backlog there is no janitor.
+if [ -z "${TASKS_WORKER_URL:-}" ]; then
+	log "no hosted board (TASKS_WORKER_URL unset) — nothing to do"
+	exit 0
+fi
+
+# Persona body as the system prompt (strip the YAML frontmatter between the first two ---).
+persona_body() { awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{f=0;next} !f' "$PERSONA"; }
+
+# One headless pass with the PM persona. $1 = the mode instruction (user prompt).
+run_pass() {
+	local instruction="$1" out rc
+	out="$(timeout "$RUN_TIMEOUT" claude -p "$instruction" \
+		--model "$MODEL" \
+		--permission-mode bypassPermissions \
+		--append-system-prompt "$(persona_body)" 2>&1)"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		log "model run failed (rc=$rc): $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-500)"
+		return "$rc"
+	fi
+	log "done (model=$MODEL):"
+	printf '%s\n' "$out" | sed 's/^/    /' >>"$LOG" 2>/dev/null || true
+	return 0
+}
+
+case "$MODE" in
+triage)
+	# GATE: count open inbox tasks. `--venture __inbox__` is the sentinel that matches
+	# no-venture (NULL) tasks. Each rendered task line starts "  P<digit>"; an empty
+	# inbox renders "  No tasks." (excluded by the regex).
+	count="$("$HOLDCO" api:tasks --venture __inbox__ --status open 2>/dev/null | grep -cE '^  P[0-9]')"
+	if [ "${count:-0}" -eq 0 ]; then
+		log "inbox empty, skipping (no model)"
+		exit 0
+	fi
+	log "inbox has $count task(s) — spinning up $MODEL"
+	run_pass "You are running in \`triage\` mode. Do ONE inbox-triage pass now, exactly per your persona: pull the inbox with \`bin/holdco api:tasks --venture __inbox__ --status open\` and drain every task (route to a live venture, fill priority/kind/domain; owner-only → --owner WITH a venture; unclear → holdco; junk → cancel with a reason). A reason on every mutation. Then print your tight report."
+	;;
+
+sweep)
+	# GATE: skip unless the open board changed since the last successful sweep. Signature =
+	# sha of the sorted open-board list (stable per board state; any change re-arms the sweep).
+	# We store the signature AFTER a successful pass, so the PM's OWN mutations don't re-arm it
+	# — the board stays quiet until an operator or the owner touches it.
+	mkdir -p "$STATE_DIR" 2>/dev/null
+	SIG_FILE="$STATE_DIR/sweep.sig"
+	sig_now() { "$HOLDCO" api:tasks --status open 2>/dev/null | grep -E '^  P[0-9]' | sort | sha256sum | awk '{print $1}'; }
+	cur="$(sig_now)"
+	prev="$(cat "$SIG_FILE" 2>/dev/null || true)"
+	if [ -n "$cur" ] && [ "$cur" = "$prev" ]; then
+		log "board unchanged since last sweep, skipping (no model)"
+		exit 0
+	fi
+	log "board changed since last sweep — spinning up $MODEL"
+	if run_pass "You are running in \`sweep\` mode. Do ONE full-board maintenance pass now, exactly per your persona: pull the full open board oldest-first, act on at most ~15-20 stalest tasks — metadata cleanup, PROOF-GATED closes (cite a SHA/URL/path in the reason or LEAVE IT), split too-big tasks into child tasks, cancel near-identical duplicates (cite the survivor). A reason on every mutation; when unsure, leave it. Then print your tight report."; then
+		sig_now >"$SIG_FILE" 2>/dev/null || true
+	fi
+	;;
+esac

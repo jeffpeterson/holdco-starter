@@ -127,6 +127,8 @@ You can also invoke it in-session with `/dream`.
   notes. Authored by the operator at greenlight (out of the positioning work). Grounds every copy
   pass through the voice gate (`/copy`); the universal anti-slop rules live in the `designer`
   persona, so `BRAND.md` holds only what's specific to this venture.
+- **`docs/STYLE.md`** — the fleet's normative code style (JS, Ruby/Rails, product CSS). Every
+  builder reads it before writing code; carry its values into any language it doesn't cover.
 - **`docs/LAUNCH.md`** — how the system actually works *right now*: hosting, deploy runbook +
   gotchas, credential status, storage, unit economics. The reference doc.
 - **`WORKLOG.md`** — the running narrative of what the operator did each pass (newest first). The

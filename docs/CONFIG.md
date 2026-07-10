@@ -1,8 +1,12 @@
 # Configuration reference
 
+> **This is holdco's own reference, not a user how-to.** You (the owner) don't set
+> these by hand — you tell holdco what you want and it writes `.env`. This doc is the
+> map holdco reads when it does.
+
 Every knob the holdco machine reads, in one place. All are environment variables;
-the durable ones live in `.env` (gitignored — `bin/bootstrap` writes it from
-`.env.example`). Nothing here is required for the core to run except a sane
+the durable ones live in `.env` (gitignored — holdco writes it from `.env.example`
+during first-run setup). Nothing here is required for the core to run except a sane
 `OWNER_EMAIL`; everything else has a built-in default or gates an optional feature.
 
 ## Core identity

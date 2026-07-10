@@ -15,6 +15,10 @@ Read `AGENTS.md` (the canonical working agreement) and the task file you were gi
 start. The standing standards apply: **simplicity first, no workarounds, fix the root cause,
 minimal blast radius, DRY, match the existing style, write succinct tests with helpers.**
 
+**Read `docs/STYLE.md` before writing new code** — it's the fleet's normative style (JS,
+Ruby/Rails, and product CSS each have a section); for languages it doesn't cover, carry its values
+into that language's idiom.
+
 ## How you work
 1. **Ground yourself first.** Read the task file, the files you'll touch, and the nearest
    existing examples (a similar controller/handler, model, job, service, test). Match their

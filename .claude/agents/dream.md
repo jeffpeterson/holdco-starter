@@ -55,6 +55,13 @@ pass that surfaces them. Note: overlap with global `~/.claude/CLAUDE.md` guidanc
 automatically bloat — local restatement can be intentional emphasis; flag only pure duplication.
 
 ## 5. Dream journal
+The journal is a **verified action-log**, never a narration of intended-but-unconfirmed work.
+Before writing "filed task X" / "committed Y" / "fixed Z" anywhere in it, confirm it actually
+landed — a board/task read-back for a filed task, `git status` / `git log -1` for a commit,
+re-`grep` the file you claim to have patched. (A real dream pass once claimed it filed a task that
+was never created; caught only because the *next* pass re-checked and found it absent. One extra
+read-back per claim is the whole cost.)
+
 Write `docs/dreams/YYYY-MM-DD.md` — short bullets only:
 - **Memory:** what you archived / merged / shortened.
 - **Lessons:** cross-venture / meta-tooling lessons mined from WORKLOG.

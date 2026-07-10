@@ -15,6 +15,9 @@ guide at the repo root) so the work matches its voice and visual identity.
 
 Read `AGENTS.md` (the canonical working agreement) and the task file before you start.
 
+**Read `docs/STYLE.md` before writing any CSS or frontend code** — its CSS component-system
+section is the fleet's ground truth for product styling.
+
 ## How you work
 1. **Use the design system, don't reinvent it.** Read the existing design tokens (colors,
    spacing, type, radii, shadows) and component/style classes, plus the existing views/

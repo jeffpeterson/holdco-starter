@@ -25,87 +25,75 @@ command**.
   plan that can run your chosen model. The fleet defaults to **Sonnet**; Opus is
   opt-in (see `docs/COST.md`).
 - **tmux**, **Ruby + Rake**, **git** — required.
-- Optional: **bun** (email channel + Worker dev), **gh** (push venture repos),
-  **whois** (`bin/holdco domain`), **codex** (second engine + image generation).
+- Optional (holdco uses these when present): **bun** (email channel + Worker dev),
+  **gh** (push venture repos), **whois** (domain-availability checks), **codex**
+  (second engine + image generation).
 - Linux is recommended — the supervisor's orphan-reaping uses `/proc`.
 
-## Install
+## Run it — one command, then just talk
 
-**This repo IS your holdco — clone it anywhere.** It's location-independent:
-`bin/bootstrap` detects where it lives and records that path as `HOLDCO_ROOT`
-in `.env`, so operators and venture tooling resolve holdco (e.g.
-`$HOLDCO_ROOT/bin/email`, `$HOLDCO_ROOT/bin/holdco`, sourcing `$HOLDCO_ROOT/.env`)
-no matter where you put it.
+**You configure and run everything by talking WITH holdco.** The CLI tools in this
+repo (`bin/holdco`, the board client, email, the scaffold) are *holdco's own
+implements* — holdco runs them on your behalf. The only thing you ever run is the
+launch:
 
 ```
-git clone <your-repo-url> ~/code/holdco   # ~/code/holdco is a tidy default, not required
+git clone <your-repo-url> ~/code/holdco   # anywhere — it's location-independent
 cd ~/code/holdco
 bin/bootstrap
 ```
 
-By default new venture repos are scaffolded as **siblings** of holdco (so cloning
-to `~/code/holdco` puts ventures at `~/code/acme`). Override where new ventures land
-with `VENTURES_ROOT` in `.env`. An existing venture can live **anywhere** — its path
-is recorded per-venture in `ventures/<id>.md` (the `repo:` field), and all fleet
-tooling resolves each venture by that recorded path, not by a fixed base.
+`bin/bootstrap` does a bare prerequisite check and then launches Claude with the
+holdco persona. From there it's a **conversation**: holdco greets you, walks you
+through setup (owner email, models, and the opt-in email channel / task board /
+GitHub — the **core works with zero optional features**), writes `.env` and
+everything else itself, then moves into a persistent `tmux` session and starts
+operating. `bin/bootstrap --check` runs just the prerequisite check.
 
-## Setup
+After that, **you never type a command** — you talk to holdco and it does the work:
 
-```
-bin/bootstrap        # checks prereqs, walks you through config, writes .env, seeds state
-```
+- *"Start a new venture called Acme — an on-demand widget shop."* → it scaffolds the
+  repo, registers it, and boots its operator.
+- *"How's the fleet doing?"* → it reports every venture's status.
+- *"Pause the trading venture."* / *"What are you waiting on me for?"* → it acts, or
+  tells you.
 
-`bin/bootstrap` is idempotent — re-run it any time. The **core works with zero
-optional features**; the email channel and the two Cloudflare Workers are opt-in
-(it only collects their keys if you say yes). Run `bin/bootstrap --check` for a
-non-interactive prerequisite check.
-
-## First launch
-
-```
-./holdco                                              # boot the autonomous portfolio operator
-bin/holdco new acme "Acme" "one-line tagline"         # scaffold your first venture
-bin/holdco ls                                          # show the portfolio
-bin/holdco fleet                                       # status of every venture's operator
-bin/holdco                                             # help — every command
-```
-
-For the supervisor to survive reboots and crashes, add the self-healing cron
-(`bin/bootstrap` prints the exact lines):
-
-```
-@reboot      /path/to/holdco/bin/holdco-up
-*/10 * * * * /path/to/holdco/bin/holdco-up
-```
-
-`bin/holdco` is the CLI for everything — plain Ruby + Rake under the hood, no
-framework. `./holdco` is a shim for `bin/holdco operate`.
+Reach holdco any time by attaching to its tmux session (it tells you the name at
+setup), and — if you enable email — just by emailing it. During setup, holdco will
+offer to install the self-healing cron (`@reboot` + `*/10` → `bin/holdco-up`) so the
+supervisor survives reboots and crashes; that's the one bit of host wiring, and it
+sets it up for you.
 
 ## Layout
 
+You don't operate these directly — this is a map of what holdco works with.
+
 | Path | What it is |
 |------|------------|
-| `bin/holdco` | The CLI — ventures, tasks, fleet, and booting the operator. Start here. |
-| `bin/bootstrap` | One-command idempotent setup. |
-| `holdco` | Thin shim that boots the operator (`./holdco` → `bin/holdco operate`). |
+| `bin/` | holdco's own implements — the CLI, scaffold, email, supervisor scripts. holdco runs these; you don't. |
 | `.claude/agents/` | The portfolio operator persona (`holdco`) + builders + the review panel. |
 | `ventures/` | Portfolio registry, one file per business. Indexed by `PORTFOLIO.md` (generated). |
 | `templates/new-venture/` | The scaffold every new business is stamped from. **Edit it to improve all future ventures.** |
 | `tasks/` | Portfolio-level backlog, one file per task. Indexed by `TASKS.md` (generated). |
 | `lib/tasks/` | The Rake machinery: `tasks.rake` (backlog, shared with every venture) + `ventures.rake` (registry + scaffold). |
 | `services/` | Optional Cloudflare Workers (inbox + tasks board) and the email-channel MCP server. |
-| `docs/` | `PLAYBOOK.md` (start-and-run flow), `CONFIG.md` (every env knob), `COST.md`, `EMAIL.md`, and more. |
+| `docs/` | `PLAYBOOK.md` (start-and-run flow), `CONFIG.md` (every env knob), `COST.md`, `EMAIL.md`, and more — reference material for holdco itself. |
 | `AGENTS.md` | The holdco working agreement (also `CLAUDE.md`). |
 | `WORKLOG.md` | Running narrative of each operating pass. |
 
 ## How it works
 
-Read **`docs/PLAYBOOK.md`** for the full flow. In short: `bin/holdco new` clones
-the template into a new repo, fills placeholders, git-inits it, and registers it.
-That repo's `./<name>` launcher boots an autonomous operator that runs its own
-assess → delegate → review → log loop. `./holdco` runs the operator one level up,
-keeping the whole fleet alive and operating well. Configuration lives in `.env`
-(see `docs/CONFIG.md`); nothing required beyond a sane `OWNER_EMAIL`.
+**This repo IS your holdco** — location-independent, so clone it anywhere; on first
+run holdco records its own path as `HOLDCO_ROOT` in `.env`. New venture repos are
+scaffolded as **siblings** by default (cloning to `~/code/holdco` puts ventures at
+`~/code/acme`); an existing venture can live anywhere — its path is recorded
+per-venture in `ventures/<id>.md`.
+
+Under the hood (holdco's job, not yours): when you ask for a new venture, it clones
+the template into a fresh repo, fills placeholders, git-inits, and registers it; that
+repo boots its own autonomous operator running an assess → delegate → review → log
+loop. holdco runs one level up, keeping the whole fleet alive and operating well.
+Read **`docs/PLAYBOOK.md`** for the full flow and `docs/CONFIG.md` for every knob.
 
 ## License
 
