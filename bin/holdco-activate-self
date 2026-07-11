@@ -112,7 +112,7 @@ window_exists && { log "tearing down half-up window $TARGET"; tmux kill-window -
 # delivers operator mail; holdco reads its own inbox via bin/email-inbox.
 FALLBACK="exec env -u EMAIL_CHANNEL_ADDR '$REPO_ROOT/bin/operator-loop' \
 --append-system-prompt-file .claude/agents/holdco.md \
---model "${HOLDCO_MODEL:-sonnet}" --dangerously-skip-permissions --verbose \
+--model "${HOLDCO_MODEL:-opus}" --dangerously-skip-permissions --verbose \
 --remote-control 'HoldCo Operator' '/loop /clear Continue portfolio operation.'"
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then

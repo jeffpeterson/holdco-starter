@@ -81,14 +81,14 @@ are CLI-launched with `--remote-control`. Set effort via `--effort <level>` in t
 
 ## 3. Effort × model matrix — recommended per role
 
-The fleet **defaults to Sonnet** (friendly to smaller plans); Opus is opt-in per role via
-`HOLDCO_MODEL` / `OP_MODEL`. The rows below name the model worth reaching for when a role's work
-justifies the cost — read "Opus" as "upgrade to Opus when the reasoning depth pays for itself."
+The fleet **defaults to Opus** for holdco and every venture operator — never asked at setup;
+Sonnet/Haiku are opt-in per role via `HOLDCO_MODEL` / `OP_MODEL` on a cost-sensitive plan or when
+economizing under pace pressure (`docs/COST.md`).
 
 | Role | Model | Effort | Why |
 |------|-------|--------|-----|
-| **holdco** | Sonnet 4.6 (Opus opt-in) | `high` (session default) | Mixed tasks: coordination, fleet checks, dispatch don't need deep thinking; adaptive handles the balance. Reach for Opus + the `ultrathink` keyword on big calls (kill/start a venture, capital allocation). |
-| **venture operators** | Sonnet 4.6 (Opus opt-in) | `high` | Adaptive reasoning handles the tick/strategy split inside an operator automatically — no need to tune per-tick vs strategic passes separately. Set explicitly via `--effort high` in `bin/holdco run` to avoid inheriting a weird session-level override; upgrade to Opus via `OP_MODEL` for genuinely hard ventures. |
+| **holdco** | Opus 4.8 (Sonnet opt-in for cost) | `high` (session default) | Mixed tasks: coordination, fleet checks, dispatch don't need deep thinking; adaptive handles the balance. Reach for `ultrathink` on big calls (kill/start a venture, capital allocation). Downgrade to Sonnet via `HOLDCO_MODEL` on a cost-sensitive plan. |
+| **venture operators** | Opus 4.8 (Sonnet opt-in for cost) | `high` | Adaptive reasoning handles the tick/strategy split inside an operator automatically — no need to tune per-tick vs strategic passes separately. Set explicitly via `--effort high` in `bin/holdco run` to avoid inheriting a weird session-level override; downgrade to Sonnet via `OP_MODEL` when a venture doesn't need the extra depth or the plan is cost-sensitive. |
 | **coder** | Opus 4.8 | `high` | Architecture decisions, edge cases, failure modes, and root-cause fixes all benefit from thinking. Needs `model: opus` in frontmatter (currently unset). |
 | **designer** | Opus 4.8 | `medium` | Taste + pattern-matching against a design system; deep adversarial reasoning doesn't add much. Save ~30–40% thinking-token cost vs `high`. Needs `model: opus` in frontmatter (currently unset). |
 | **graybeard** | Sonnet 4.6 | `max` | Adversarial audit: the whole job is surfacing what a quick review misses. Unconstrained thinking is exactly right. `max` is Sonnet's ceiling above `high`. |
@@ -168,7 +168,7 @@ the default explicit and prevents it from being overridden by a stale session-le
 
 ```bash
 claude --remote-control "<Full Title> Operator" \
-       --model "${OP_MODEL:-sonnet}" \
+       --model "${OP_MODEL:-opus}" \
        --effort high \
        --dangerously-skip-permissions \
        ...

@@ -63,8 +63,10 @@ The fleet runs on a Claude Code **subscription plan**, not pay-as-you-go.
   sub-5-min** (stay warm — only if work is near-continuous) **or sleep long and batch** (30+ min —
   cold anyway, so don't pay for frequent cold wakes). Worst case is waking *just over* 5 min: all
   cost, no cache.
-- **Model is the biggest dial.** Opus ≈ 5× Haiku / ~1.7× Sonnet per token. Default operators to
-  **Sonnet**; Haiku for mechanical loops; Opus only for genuinely hard reasoning.
+- **Model is the biggest dial.** Opus ≈ 5× Haiku / ~1.7× Sonnet per token. **Opus is the fleet
+  default** for holdco and every venture operator — never asked at setup. Haiku for mechanical
+  loops; downgrade an operator to Sonnet via `HOLDCO_MODEL`/`OP_MODEL` on a cost-sensitive plan or
+  when economizing under pace pressure.
 - **Lower reasoning effort** on routine passes — output tokens are the pricey class (5× input).
 - **Fan out only when work is truly independent.** N parallel agents = N× concurrent draw on the
   shared caps; same-prefix parallel calls all miss cache (fire one to warm it, then release the rest).

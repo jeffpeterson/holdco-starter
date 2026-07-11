@@ -798,7 +798,7 @@ def operate(extra)
 
   args = [ "--append-system-prompt-file", persona,
            "--channels", "plugin:email@holdco-fleet",
-           "--model", ENV.fetch("HOLDCO_MODEL", "sonnet"),
+           "--model", ENV.fetch("HOLDCO_MODEL", "opus"),
            "--dangerously-skip-permissions", "--verbose" ]
   args << "--continue" if ENV["HOLDCO_RESUME"] == "1"
   args += [ "--remote-control", ENV.fetch("HOLDCO_REMOTE_NAME", "holdco") ] unless ENV["HOLDCO_REMOTE"] == "0"

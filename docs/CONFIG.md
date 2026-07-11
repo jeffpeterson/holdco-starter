@@ -1,8 +1,9 @@
 # Configuration reference
 
 > **This is holdco's own reference, not a user how-to.** You (the owner) don't set
-> these by hand — you tell holdco what you want and it writes `.env`. This doc is the
-> map holdco reads when it does.
+> these by hand — holdco fills sensible defaults into `.env` itself on first run and
+> starts working; it only asks you for what a specific feature needs, when it needs
+> it. This doc is the map holdco reads when it does.
 
 Every knob the holdco machine reads, in one place. All are environment variables;
 the durable ones live in `.env` (gitignored — holdco writes it from `.env.example`
@@ -16,19 +17,19 @@ during first-run setup). Nothing here is required for the core to run except a s
 | `OWNER_EMAIL` | `owner@example.com` | Where the fleet sends owner-facing mail + digests. |
 | `FLEET_EMAIL_DOMAIN` | _(blank)_ | Verified sending subdomain every fleet address lives on (e.g. `bot.example.com`). Each operator gets `<id>@<this domain>`. **Blank disables all email features.** |
 | `HOLDCO_ROOT` | this checkout's path | Absolute path to the holdco checkout — auto-set by `bin/bootstrap`. Operators + venture tooling resolve holdco (`$HOLDCO_ROOT/bin/email`, `/bin/holdco`, `/.env`) via it, so holdco is location-independent. |
-| `VENTURES_ROOT` | `HOLDCO_ROOT`'s parent | Where `bin/holdco new` scaffolds new venture repos (siblings of holdco by default). Existing ventures may live anywhere — their path is recorded per-venture in `ventures/<id>.md`. |
+| `VENTURES_ROOT` | `HOLDCO_ROOT/ventures` | Where `bin/holdco new` scaffolds new venture repos — inside this checkout by default (gitignored, so a user's businesses never land in the starter's history). Existing ventures may live anywhere — their path is recorded per-venture in `ventures/<id>.md`. |
 | `HOLDCO_TMUX_SESSION` | `holdco` | tmux session name the fleet runs in. |
 
 ## Models
 
-The fleet defaults to **Sonnet** to stay affordable on smaller plans. Opus is
-available per-role via env var; reserve it for genuinely hard reasoning. See
-`docs/COST.md`.
+The fleet defaults to **Opus** for the supervisor and every venture operator — never
+asked at setup. Downgrade a role to Sonnet/Haiku via its env var on a cost-sensitive
+plan; see `docs/COST.md`.
 
 | Var | Default | What it does |
 |-----|---------|--------------|
-| `HOLDCO_MODEL` | `sonnet` | Model the supervisor session runs on. |
-| `OP_MODEL` | `sonnet` | Model each venture operator runs on. |
+| `HOLDCO_MODEL` | `opus` | Model the supervisor session runs on. |
+| `OP_MODEL` | `opus` | Model each venture operator runs on. |
 | `DREAM_MODEL` | `sonnet` | Model the dream/maintenance cycle uses (never Opus). |
 
 ## Supervisor loop (`bin/holdco operate`)

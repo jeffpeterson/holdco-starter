@@ -3,14 +3,14 @@
 # ./{{VENTURE}} — launch Claude Code as the autonomous operator for {{TITLE}}.
 #
 # Boots an interactive Claude session with the operator persona injected, full
-# autonomy (permissions skipped), the most capable model, remote control so you can
+# autonomy (permissions skipped), Opus by default, remote control so you can
 # steer from claude.ai/code or the mobile app, and a standing-work driver.
 #
 # This business is overseen by holdco (the portfolio manager). This launcher runs
 # the operator for THIS business only.
 #
 # Toggles (env vars):
-#   OP_MODEL     model alias/id         (default: sonnet; set OP_MODEL=opus for hard reasoning)
+#   OP_MODEL     model alias/id         (default: opus; set OP_MODEL=sonnet on a cost-sensitive plan)
 #   OP_REMOTE    1=remote-control on    (default: 1)  — needs claude.ai sub; set 0 if it errors
 #   OP_DRIVE     standing-work driver   (default: loop)
 #                  loop  — /loop: wake on a cadence (or self-paced), make a pass, rest.
@@ -42,7 +42,7 @@ PERSONA=".claude/agents/operator.md"
 
 args=(
   --append-system-prompt-file "$PERSONA"
-  --model "${OP_MODEL:-sonnet}"
+  --model "${OP_MODEL:-opus}"
   --dangerously-skip-permissions
   --verbose
 )

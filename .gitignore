@@ -21,3 +21,9 @@ docs/dreams/.last
 
 # Wrangler build cache
 services/tasks/.wrangler/
+
+# Scaffolded venture repos (VENTURES_ROOT default: ventures/<id>/, a nested repo
+# per business, each git-inited on its own). Never ship a user's actual businesses
+# in the starter's history — only the lightweight ventures/<id>.md registry files
+# (and _template.md) are tracked.
+ventures/*/

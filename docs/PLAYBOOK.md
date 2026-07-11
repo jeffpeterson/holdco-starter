@@ -31,16 +31,18 @@ step. holdco scaffolds, reviews, and decides; the operator researches and writes
 bin/holdco new <name> "Display Title" "one-line tagline"
 ```
 
-This stamps `templates/new-venture/` into a **sibling of holdco** by default (holdco at
-`/path/to/holdco` → new venture at `/path/to/<name>`), fills in the placeholders, `git init`s it,
-seeds its `TASKS.md`, makes the first commit, and registers it in `ventures/<name>.md` +
-`PORTFOLIO.md` with status **`incubating`**.
+This stamps `templates/new-venture/` **inside this checkout** by default (holdco at
+`/path/to/holdco` → new venture at `/path/to/holdco/ventures/<name>`, gitignored so it never
+lands in the starter's own history), fills in the placeholders, `git init`s it, seeds its
+`TASKS.md`, makes the first commit, and registers it in `ventures/<name>.md` + `PORTFOLIO.md`
+with status **`incubating`**.
 
-**Ventures can live ANYWHERE.** The default is a sibling; override the location for one venture
-with `VENTURE_PATH=/abs/path`, or for all with `VENTURES_ROOT`. An existing repo anywhere on disk
-is registered as-is with `bin/holdco register <id> "Title" /abs/path/to/repo`. Every fleet tool
-resolves a venture by its stored `repo:` path in `ventures/<id>.md` — never a fixed root — so
-`bin/holdco run/fleet/stop` all work regardless of where the repo lives.
+**Ventures can live ANYWHERE.** The default is inside holdco's own `ventures/` dir; override the
+location for one venture with `VENTURE_PATH=/abs/path`, or for all with `VENTURES_ROOT`. An
+existing repo anywhere on disk is registered as-is with `bin/holdco register <id> "Title"
+/abs/path/to/repo`. Every fleet tool resolves a venture by its stored `repo:` path in
+`ventures/<id>.md` — never a fixed root — so `bin/holdco run/fleet/stop` all work regardless of
+where the repo lives.
 
 What you get in the new repo:
 - **`AGENTS.md`** (+ `CLAUDE.md` symlink) — the business's working agreement. **Edit this first**

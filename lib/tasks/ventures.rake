@@ -32,10 +32,14 @@ namespace :ventures do
   # rake file, not from cwd). Scaffolded ventures + their operators resolve holdco's
   # tooling and secrets via this, exported as $HOLDCO_ROOT.
   HOLDCO_ROOT = File.expand_path("../..", __dir__).freeze
-  # Where new venture repos are created. Default: holdco's parent dir (ventures are
-  # SIBLINGS of holdco). Override with VENTURES_ROOT; existing ventures may live
-  # anywhere — their path is recorded per-venture in ventures/<id>.md (repo:).
-  VENTURES_ROOT = ENV.fetch("VENTURES_ROOT", File.dirname(HOLDCO_ROOT)).freeze
+  # Where new venture repos are created. Default: INSIDE this checkout, under
+  # ventures/ (same dir as the registry .md files — a venture gets both
+  # ventures/<id>.md and a ventures/<id>/ repo dir). Keeps every scaffolded repo
+  # inside holdco's own workspace (auto-mode-friendly) and gitignored so a user's
+  # actual businesses never land in the starter's history. Override with
+  # VENTURES_ROOT; existing ventures may live anywhere — their path is recorded
+  # per-venture in ventures/<id>.md (repo:).
+  VENTURES_ROOT = ENV.fetch("VENTURES_ROOT", File.join(HOLDCO_ROOT, VENTURES_DIR)).freeze
   # True when the caller set VENTURES_ROOT explicitly (e.g. a scaffold smoke-test).
   # In that mode ventures:new skips the real registry write so no phantom venture leaks in.
   VENTURES_ROOT_OVERRIDE = ENV.key?("VENTURES_ROOT").freeze
@@ -234,7 +238,7 @@ namespace :ventures do
     else
       "/loop /clear #{goal}"
     end
-    model  = ENV["OP_MODEL"] || "sonnet"
+    model  = ENV["OP_MODEL"] || "opus"
     target = ENV.fetch("HOLDCO_TMUX_SESSION", "holdco")
     color  = window_color(id, v[:meta])
     persona_path = File.join(repo, persona)
@@ -353,9 +357,10 @@ namespace :ventures do
     tagline = unquote(args[:tagline] || ENV["TAGLINE"] || "")
     today = Date.today.iso8601
 
-    # Ventures can live ANYWHERE. Default: a sibling of holdco (VENTURES_ROOT/name).
-    # Override the location for THIS venture with VENTURE_PATH=/abs/path (the stored
-    # `repo:` path is what every fleet tool resolves by — not a fixed root).
+    # Ventures can live ANYWHERE. Default: inside this checkout's own ventures/
+    # dir (VENTURES_ROOT/name — see VENTURES_ROOT above), gitignored. Override the
+    # location for THIS venture with VENTURE_PATH=/abs/path (the stored `repo:`
+    # path is what every fleet tool resolves by — not a fixed root).
     dest = ENV["VENTURE_PATH"].to_s.strip.empty? ? File.join(VENTURES_ROOT, name) : File.expand_path(ENV["VENTURE_PATH"])
     abort "Refusing: #{dest} already exists." if File.exist?(dest)
     abort "Missing template dir #{TEMPLATE_DIR}." unless File.directory?(TEMPLATE_DIR)

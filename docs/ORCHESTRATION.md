@@ -23,14 +23,14 @@ bin/holdco fleet             # status of every venture — tmux windows + claude
 ```bash
 tmux new-window -t <session> -n "<first-word-of-title>" -c <repo> \
   claude --remote-control "<Full Title> Operator" \
-         --model "${OP_MODEL:-sonnet}" --dangerously-skip-permissions \
+         --model "${OP_MODEL:-opus}" --dangerously-skip-permissions \
          --append-system-prompt-file <repo>/.claude/agents/<operator>.md \
          "/loop /clear Continue <Title> operation."
 # then: set-window-option automatic-rename off + a per-venture window colour
 ```
 
-Operators default to **Sonnet** (friendly to smaller plans); set `OP_MODEL=opus` (or
-`HOLDCO_MODEL=opus` for holdco itself) when a venture genuinely needs deeper reasoning.
+Operators default to **Opus** — never asked at setup; set `OP_MODEL=sonnet` (or
+`HOLDCO_MODEL=sonnet` for holdco itself) on a cost-sensitive plan.
 
 Operators run a **continuous self-paced loop** — the `/loop /clear` opening prompt enters the
 `/loop` skill (same pattern as holdco's own `bin/holdco operate`): wake, do a full pass, reschedule,

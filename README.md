@@ -14,6 +14,9 @@ command**.
 > — full tool access, no per-action prompts — in long-lived `tmux` sessions on a
 > persistent machine. Those agents can run shell commands, edit and push code, send
 > email, and call any MCP server you've authorized, **without asking you first.**
+> (The very first `bin/bootstrap` launch is the one exception: it defaults to
+> Claude Code's safer `acceptEdits` mode until it hands off to the persistent
+> operator — see `bin/bootstrap --help` for the full-autonomy opt-in.)
 >
 > Run it only on a box you control and are willing to let an agent operate, with
 > credentials scoped to exactly what you intend. This is the design — autonomy is
@@ -22,20 +25,19 @@ command**.
 ## Prerequisites
 
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** — logged in, on a
-  plan that can run your chosen model. The fleet defaults to **Sonnet**; Opus is
-  opt-in (see `docs/COST.md`).
+  plan that can run **Opus**, the fleet's default (see `docs/COST.md` for cheaper
+  opt-in models on a smaller plan).
 - **tmux**, **Ruby + Rake**, **git** — required.
 - Optional (holdco uses these when present): **bun** (email channel + Worker dev),
   **gh** (push venture repos), **whois** (domain-availability checks), **codex**
   (second engine + image generation).
 - Linux is recommended — the supervisor's orphan-reaping uses `/proc`.
 
-## Run it — one command, then just talk
+## Run it — one command, then it just starts working
 
-**You configure and run everything by talking WITH holdco.** The CLI tools in this
-repo (`bin/holdco`, the board client, email, the scaffold) are *holdco's own
-implements* — holdco runs them on your behalf. The only thing you ever run is the
-launch:
+**holdco doesn't interview you.** The CLI tools in this repo (`bin/holdco`, the
+board client, email, the scaffold) are *holdco's own implements* — holdco runs
+them on your behalf. The only thing you ever run is the launch:
 
 ```
 git clone <your-repo-url> ~/code/holdco   # anywhere — it's location-independent
@@ -44,11 +46,13 @@ bin/bootstrap
 ```
 
 `bin/bootstrap` does a bare prerequisite check and then launches Claude with the
-holdco persona. From there it's a **conversation**: holdco greets you, walks you
-through setup (owner email, models, and the opt-in email channel / task board /
-GitHub — the **core works with zero optional features**), writes `.env` and
-everything else itself, then moves into a persistent `tmux` session and starts
-operating. `bin/bootstrap --check` runs just the prerequisite check.
+holdco persona. There's no config Q&A: holdco greets you in one short paragraph,
+defaults its own config itself (**Opus**, always — never a model question), writes
+`.env`, and gets straight to work — the **core works with zero optional
+features** — moving itself into a persistent `tmux` session along the way. As it
+hits a feature that needs something only you can supply (a domain, Cloudflare
+access, …), it tells you then, in context — never as an upfront checklist.
+`bin/bootstrap --check` runs just the prerequisite check.
 
 **It deploys its own infrastructure.** Run **`/mcp`** and authorize `cloudflare-api`
 in your browser — Claude Code's own auth grant, the one step only you can do — give
@@ -68,11 +72,11 @@ for you. Everything else, you talk to holdco and it does the work:
 - *"Pause the trading venture."* / *"What are you waiting on me for?"* → it acts, or
   tells you.
 
-Reach holdco any time by attaching to its tmux session (it tells you the name at
-setup), and — if you enable email — just by emailing it. During setup, holdco will
-offer to install the self-healing cron (`@reboot` + `*/10` → `bin/holdco-up`) so the
-supervisor survives reboots and crashes; that's the one bit of host wiring, and it
-sets it up for you.
+Reach holdco any time by attaching to its tmux session (it tells you the name in
+its first update), and — once email is on — just by emailing it. On first run,
+holdco installs the self-healing cron itself (`@reboot` + `*/10` →
+`bin/holdco-up`) so the supervisor survives reboots and crashes — the one bit of
+host wiring, done without asking, since running `bin/bootstrap` is the ask.
 
 ## Layout
 
@@ -82,7 +86,7 @@ You don't operate these directly — this is a map of what holdco works with.
 |------|------------|
 | `bin/` | holdco's own implements — the CLI, scaffold, email, supervisor scripts. holdco runs these; you don't. |
 | `.claude/agents/` | The portfolio operator persona (`holdco`) + builders + the review panel. |
-| `ventures/` | Portfolio registry, one file per business. Indexed by `PORTFOLIO.md` (generated). |
+| `ventures/` | Portfolio registry, one tracked file per business, plus each scaffolded venture's own repo dir by default (gitignored — see `.gitignore`). Indexed by `PORTFOLIO.md` (generated). |
 | `templates/new-venture/` | The scaffold every new business is stamped from. **Edit it to improve all future ventures.** |
 | `tasks/` | Portfolio-level backlog, one file per task. Indexed by `TASKS.md` (generated). |
 | `lib/tasks/` | The Rake machinery: `tasks.rake` (backlog, shared with every venture) + `ventures.rake` (registry + scaffold). |
@@ -94,10 +98,11 @@ You don't operate these directly — this is a map of what holdco works with.
 ## How it works
 
 **This repo IS your holdco** — location-independent, so clone it anywhere; on first
-run holdco records its own path as `HOLDCO_ROOT` in `.env`. New venture repos are
-scaffolded as **siblings** by default (cloning to `~/code/holdco` puts ventures at
-`~/code/acme`); an existing venture can live anywhere — its path is recorded
-per-venture in `ventures/<id>.md`.
+run holdco records its own path as `HOLDCO_ROOT` in `.env`. New venture repos
+scaffold **inside this checkout** by default, under `ventures/<id>/` (gitignored,
+computed from `HOLDCO_ROOT` — never hardcoded, and overridable via
+`VENTURES_ROOT`/`VENTURE_PATH`); an existing venture can live anywhere — its path
+is recorded per-venture in `ventures/<id>.md`.
 
 Under the hood (holdco's job, not yours): when you ask for a new venture, it clones
 the template into a fresh repo, fills placeholders, git-inits, and registers it; that

@@ -88,11 +88,12 @@ faster, and more autonomous. **Optimize, optimize, optimize.**
     re-read a big context pays a full-price COLD read whenever **N > 5 min** — poll sub-5-min
     (stay warm) **or** batch on a 30+ min sleep; worst case is waking *just over* 5 min.
   - **Keep vs clear:** clear/compact when context is **big AND stale**; keep it lean-and-soon.
-  - **Model is the biggest dial:** Sonnet for routine work, Haiku for mechanical loops, Opus only
-    for hard reasoning; lower reasoning effort on routine passes.
+  - **Model is the biggest dial:** Opus is the fleet default for holdco and every operator (never
+    asked at setup); Haiku for mechanical loops; downgrade a role to Sonnet on a cost-sensitive
+    plan or when economizing (below); lower reasoning effort on routine passes.
   - **Self-check `bin/holdco tokens`** (worst-case 7-day % + $ spent today); if the 7-day % is high
-    or climbing fast, **flag it in WORKLOG and economize** — Sonnet / lower effort / fewer parallel
-    agents until the window resets.
+    or climbing fast, **flag it in WORKLOG and economize** — downgrade to Sonnet / lower effort /
+    fewer parallel agents until the window resets.
   - **Throttle mode (owner directive):** when tokens are **over pace** OR it's the **weekend**, go
     *reactive, not busy* — stretch the wake cadence to the 1-hour max and chain hops, do only
     high-priority/time-sensitive work (keep operators alive, surface Urgent blockers, run the cheap

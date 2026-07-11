@@ -2,15 +2,24 @@
 #
 # bin/bootstrap — the ONE command to stand up a fresh holdco clone.
 #
-# There is deliberately NO config Q&A here. Configuration is a CONVERSATION with
-# Claude, not a shell script: this does a bare prerequisite check, then launches
-# `claude` with the holdco persona in first-run setup mode. The operator then
-# walks you through the fleet (owner email, models, and the optional email
-# channel / task board / GitHub), writes .env and everything else with its own
-# tools, moves itself into a persistent tmux session, and starts operating.
+# There is deliberately NO config Q&A here. holdco doesn't interview you: this
+# does a bare prerequisite check, then launches `claude` with the holdco persona
+# in first-run setup mode. The operator defaults its own config (Opus, no model
+# question — ever), writes .env with its own tools, and starts WORKING — the
+# same assess/delegate/review/log loop it runs every later pass — moving itself
+# into a persistent tmux session along the way. It surfaces what it needs from
+# you (a domain, Cloudflare access, …) as it hits each blocker, not upfront.
 #
-#   bin/bootstrap          launch the first-run setup conversation
-#   bin/bootstrap --check  prerequisite check only (non-interactive, CI-safe)
+# Runs under Claude Code's --permission-mode acceptEdits by default (auto-accepts
+# file edits, still asks before anything riskier) — not full autonomy. Pass
+# --skip-permissions (or set HOLDCO_BOOTSTRAP_SKIP_PERMISSIONS=1) to launch this
+# first-run session with --dangerously-skip-permissions instead; every later
+# pass (the persistent tmux operator) already runs fully autonomous regardless —
+# this toggle only affects THIS one setup launch.
+#
+#   bin/bootstrap                    launch the first-run session
+#   bin/bootstrap --skip-permissions launch first-run with full autonomy (--dangerously-skip-permissions)
+#   bin/bootstrap --check            prerequisite check only (non-interactive, CI-safe)
 #   bin/bootstrap --help
 #
 set -euo pipefail
@@ -19,9 +28,13 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
+
+skip_permissions=0
+[ "${HOLDCO_BOOTSTRAP_SKIP_PERMISSIONS:-0}" = "1" ] && skip_permissions=1
+[ "${1:-}" = "--skip-permissions" ] && skip_permissions=1
 
 # ---- bare prerequisite check ------------------------------------------------
 case "$(uname -s)" in
@@ -43,18 +56,22 @@ fi
 
 if [ "${1:-}" = "--check" ]; then
   echo "bootstrap: prerequisites present (claude git ruby rake tmux)."
-  echo "  Run bin/bootstrap with no args to start the setup conversation."
+  echo "  Run bin/bootstrap with no args to start the first-run session."
   exit 0
 fi
 
 command -v claude >/dev/null 2>&1 || { echo "bootstrap: claude not found" >&2; exit 1; }
 
-# ---- hand off to Claude: configuration is a conversation --------------------
+# ---- hand off to Claude: holdco configures itself and gets to work ----------
 # Launch an interactive claude in THIS terminal, seeded with the first-run
 # instruction. The persona's "First-run setup" section drives the rest: it
-# configures the fleet with you, writes .env, then relaunches itself in tmux as
-# the persistent operator (bin/holdco-up) and hands off.
+# defaults .env itself (Opus, never asked), starts real work, and relaunches
+# itself in tmux as the persistent operator (bin/holdco-up), handing off.
+permission_flag=(--permission-mode acceptEdits)
+[ "$skip_permissions" = "1" ] && permission_flag=(--dangerously-skip-permissions)
+
 exec claude \
   --append-system-prompt-file .claude/agents/holdco.md \
-  --model "${HOLDCO_MODEL:-sonnet}" \
-  "This is a FRESH holdco clone and there is no .env yet. Run FIRST-RUN SETUP now, exactly per the 'First-run setup' section of your persona: configure the fleet with me conversationally, write .env and any other config with your own tools, then create the tmux session and relaunch yourself there as the persistent operator, and hand off to your normal operating loop."
+  --model "${HOLDCO_MODEL:-opus}" \
+  "${permission_flag[@]}" \
+  "This is a FRESH holdco clone and there is no .env yet. Run FIRST-RUN SETUP now, exactly per the 'First-run setup' section of your persona: default the config yourself (no questions), write .env and any other config with your own tools, start real work immediately, then create the tmux session and relaunch yourself there as the persistent operator, surfacing any resource blockers as you hit them."
