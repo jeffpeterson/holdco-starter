@@ -10,16 +10,16 @@
 # into a persistent tmux session along the way. It surfaces what it needs from
 # you (a domain, Cloudflare access, …) as it hits each blocker, not upfront.
 #
-# Runs under Claude Code's --permission-mode acceptEdits by default (auto-accepts
-# file edits, still asks before anything riskier) — not full autonomy. Pass
-# --skip-permissions (or set HOLDCO_BOOTSTRAP_SKIP_PERMISSIONS=1) to launch this
-# first-run session with --dangerously-skip-permissions instead; every later
-# pass (the persistent tmux operator) already runs fully autonomous regardless —
-# this toggle only affects THIS one setup launch.
+# Runs with --dangerously-skip-permissions by default — full autonomy from the
+# first launch, matching how the persistent tmux operator (every later pass)
+# already runs. Pass --safe (or set HOLDCO_BOOTSTRAP_SAFE=1) to launch this one
+# setup session under --permission-mode acceptEdits instead (auto-accepts file
+# edits, still prompts before anything riskier); the toggle affects only THIS
+# launch, not the persistent operator.
 #
-#   bin/bootstrap                    launch the first-run session
-#   bin/bootstrap --skip-permissions launch first-run with full autonomy (--dangerously-skip-permissions)
-#   bin/bootstrap --check            prerequisite check only (non-interactive, CI-safe)
+#   bin/bootstrap          launch the first-run session (full autonomy)
+#   bin/bootstrap --safe   launch first-run under --permission-mode acceptEdits
+#   bin/bootstrap --check  prerequisite check only (non-interactive, CI-safe)
 #   bin/bootstrap --help
 #
 set -euo pipefail
@@ -32,9 +32,9 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   exit 0
 fi
 
-skip_permissions=0
-[ "${HOLDCO_BOOTSTRAP_SKIP_PERMISSIONS:-0}" = "1" ] && skip_permissions=1
-[ "${1:-}" = "--skip-permissions" ] && skip_permissions=1
+safe_mode=0
+[ "${HOLDCO_BOOTSTRAP_SAFE:-0}" = "1" ] && safe_mode=1
+[ "${1:-}" = "--safe" ] && safe_mode=1
 
 # ---- bare prerequisite check ------------------------------------------------
 case "$(uname -s)" in
@@ -67,8 +67,8 @@ command -v claude >/dev/null 2>&1 || { echo "bootstrap: claude not found" >&2; e
 # instruction. The persona's "First-run setup" section drives the rest: it
 # defaults .env itself (Opus, never asked), starts real work, and relaunches
 # itself in tmux as the persistent operator (bin/holdco-up), handing off.
-permission_flag=(--permission-mode acceptEdits)
-[ "$skip_permissions" = "1" ] && permission_flag=(--dangerously-skip-permissions)
+permission_flag=(--dangerously-skip-permissions)
+[ "$safe_mode" = "1" ] && permission_flag=(--permission-mode acceptEdits)
 
 exec claude \
   --append-system-prompt-file .claude/agents/holdco.md \

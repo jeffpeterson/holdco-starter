@@ -14,9 +14,9 @@ command**.
 > — full tool access, no per-action prompts — in long-lived `tmux` sessions on a
 > persistent machine. Those agents can run shell commands, edit and push code, send
 > email, and call any MCP server you've authorized, **without asking you first.**
-> (The very first `bin/bootstrap` launch is the one exception: it defaults to
-> Claude Code's safer `acceptEdits` mode until it hands off to the persistent
-> operator — see `bin/bootstrap --help` for the full-autonomy opt-in.)
+> This is true from the very first `bin/bootstrap` launch (pass `bin/bootstrap
+> --safe` to run just that setup session under Claude Code's `acceptEdits` mode
+> instead — see `bin/bootstrap --help`).
 >
 > Run it only on a box you control and are willing to let an agent operate, with
 > credentials scoped to exactly what you intend. This is the design — autonomy is
