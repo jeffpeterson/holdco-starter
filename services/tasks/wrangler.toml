@@ -2,6 +2,9 @@ name = "holdco-tasks"
 main = "./src/worker.ts"
 compatibility_date = "2026-06-26"
 
+# Explicit since wrangler 4.105 flipped the default for an absent key to false.
+workers_dev = true
+
 # Run the Worker for every request — Worker serves /api/* and /login,
 # then falls through to static assets for everything else.
 [assets]
