@@ -59,3 +59,58 @@ for (const [name, header, from, wantVerified, wantSigner] of cases) {
     assert.equal(g.signing_domain, wantSigner, `signing_domain for "${name}"`);
   });
 }
+
+// --- body extraction ---------------------------------------------------------
+// Letters carrying BOTH html and text were landing with an empty body. The
+// hand-rolled walk reads a canonical two-part multipart/alternative fine, so
+// the break was in MIME it had never seen — which is why postal-mime, a real
+// parser, now decides the body and the walk is only the fallback.
+
+import PostalMime from "postal-mime";
+import { extractText, bodyText } from "./index.js";
+
+const ALTERNATIVE = [
+  `Content-Type: multipart/alternative; boundary="B0UND"`,
+  ``,
+  `--B0UND`,
+  `Content-Type: text/plain; charset=utf-8`,
+  ``,
+  `hello plain`,
+  `--B0UND`,
+  `Content-Type: text/html; charset=utf-8`,
+  ``,
+  `<p>hello html</p>`,
+  `--B0UND--`,
+  ``,
+].join("\r\n");
+
+test("postal-mime reads the html+text shape that arrived body-less", async () => {
+  const parsed = await PostalMime.parse(ALTERNATIVE);
+  assert.equal(bodyText(parsed, ALTERNATIVE), "hello plain");
+});
+
+test("bodyText prefers the parsed text over the hand-rolled walk", () => {
+  assert.equal(bodyText({ text: "from postal-mime" }, ALTERNATIVE), "from postal-mime");
+});
+
+test("bodyText strips the parsed html when there is no text part", () => {
+  assert.equal(bodyText({ html: "<p>only html</p>" }, ""), "only html");
+});
+
+test("bodyText falls back to extractText when the parse threw", () => {
+  assert.equal(bodyText(null, ALTERNATIVE), "hello plain");
+});
+
+test("extractText preserves a mixed-case multipart boundary", () => {
+  const raw = [
+    `Content-Type: multipart/mixed; boundary="FIXTURE-BOUNDARY"`,
+    ``,
+    `--FIXTURE-BOUNDARY`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    `hello from scanner`,
+    `--FIXTURE-BOUNDARY--`,
+    ``,
+  ].join("\r\n");
+  assert.equal(extractText(raw), "hello from scanner");
+});

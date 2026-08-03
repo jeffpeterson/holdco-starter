@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Cloudflare Email Worker — writes inbound fleet mail (<id>@bot.example.com) to a bound KV namespace, keyed by message.to. No secrets in the Worker.",
+  "description": "Cloudflare Email Worker \u2014 writes inbound fleet mail (<id>@bot.example.com) to a bound KV namespace, keyed by message.to. No secrets in the Worker.",
   "main": "src/index.js",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "test": "node --test"
+  },
+  "dependencies": {
+    "postal-mime": "^2.7.5"
   },
   "devDependencies": {
     "wrangler": "^3"

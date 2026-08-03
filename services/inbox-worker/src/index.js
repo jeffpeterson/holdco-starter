@@ -25,6 +25,8 @@
  * carries a 90-day TTL so old mail auto-expires instead of wedging the inbox.
  */
 
+import PostalMime from "postal-mime";
+
 // Cap raw MIME we parse — a single huge message can't blow up the Worker or KV.
 const MAX_RAW_BYTES = 64 * 1024;
 // Auto-expire stored mail after 90 days so a flood can't accumulate forever.
@@ -45,6 +47,17 @@ export default {
     const grade = gradeAuth(authResultsHeader(message.headers), fromDomainOf(message.headers, message.from));
 
     const key = `msg:${Date.now()}:${(message.headers.get("message-id") || crypto.randomUUID()).replace(/[<>]/g, "")}`;
+
+    // Parse with postal-mime, the standard Workers MIME parser. Best-effort: a
+    // parse that throws must never bounce mail that would otherwise land, so
+    // the body falls back to the hand-rolled walk below.
+    let parsed = null;
+    try {
+      parsed = await PostalMime.parse(raw);
+    } catch (err) {
+      console.error(`inbox MIME parse failed for ${key}: ${err}`);
+    }
+
     const entry = {
       id: key,
       received_at: new Date().toISOString(),
@@ -53,7 +66,7 @@ export default {
       reply_to: message.headers.get("reply-to") || null,
       to: message.to,
       subject: message.headers.get("subject") || "(no subject)",
-      text: extractText(raw),
+      text: bodyText(parsed, raw),
       read: false,
       verified: grade.verified,
       signing_domain: grade.signing_domain,
@@ -134,7 +147,7 @@ function domainsAlign(signer, fromDomain) {
 }
 
 // Exported for unit tests only; the Worker runtime uses just the default export.
-export { gradeAuth, domainsAlign, fromDomainOf };
+export { gradeAuth, domainsAlign, fromDomainOf, extractText, bodyText };
 
 // --- helpers -----------------------------------------------------------------
 
@@ -193,15 +206,37 @@ function decodeBody(body, cte) {
   return body;
 }
 
+// The stored body. postal-mime is a real MIME parser; it — not the hand-rolled
+// walk below — decides what the body is. extractText stays as the fallback for
+// a parse that threw: it reads the common shapes, but real senders compose MIME
+// it does not, which is how letters carrying both html and text arrived with an
+// empty body.
+function bodyText(parsed, raw) {
+  const text = (parsed?.text || "").trim();
+  if (text) return text;
+  const html = (parsed?.html || "").trim();
+  if (html) return stripHtml(html);
+  return extractText(raw);
+}
+
+function stripHtml(html) {
+  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ")
+    .replace(/[ \t]+\n/g, "\n").trim();
+}
+
 // Recursively walk MIME to find the first text/plain part (falls back to stripped text/html).
 function extractText(raw, depth = 0) {
   if (depth > 8) return "";
   const [headerBlock, body] = splitHeadersBody(raw);
   const headers = parseHeaders(headerBlock);
-  const ct = (headers["content-type"] || "text/plain").toLowerCase();
+  // Match types case-insensitively but read the boundary off the ORIGINAL
+  // header — boundaries are case-SENSITIVE, and lowercasing the whole
+  // Content-Type silently loses every mixed-case one.
+  const ct = headers["content-type"] || "text/plain";
+  const type = ct.toLowerCase();
 
-  if (ct.startsWith("multipart/")) {
-    const bm = ct.match(/boundary="?([^";]+)"?/);
+  if (type.startsWith("multipart/")) {
+    const bm = ct.match(/boundary="?([^";]+)"?/i);
     if (!bm) return "";
     const boundary = "--" + bm[1];
     const parts = body.split(boundary).slice(1, -1);
@@ -218,8 +253,6 @@ function extractText(raw, depth = 0) {
   }
 
   const decoded = decodeBody(body, headers["content-transfer-encoding"]);
-  if (ct.startsWith("text/html")) {
-    return decoded.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/[ \t]+\n/g, "\n").trim();
-  }
+  if (type.startsWith("text/html")) return stripHtml(decoded);
   return decoded.trim();
 }
