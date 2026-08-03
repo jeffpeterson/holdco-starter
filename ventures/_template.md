@@ -2,7 +2,7 @@
 id: short-stable-slug
 title: Display Name
 tagline: One line — what it is and for whom
-repo: ~/code/short-stable-slug
+repo: ventures/short-stable-slug   # relative to this checkout; an absolute path works too
 operator: short-stable-slug
 status: incubating      # incubating | idea | building | launching | live | paused | shuttered | killed
 # mode: long-loop       # cadence: long-loop (default, self-paced /loop) | cold (reactive: woken by

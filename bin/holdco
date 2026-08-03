@@ -914,7 +914,7 @@ def usage
 
     #{b.call('Ventures')}
       bin/holdco ls                            list ventures
-      bin/holdco new <name> [title] [tagline]  scaffold a new venture repo in ~/code/<name> (status: incubating)
+      bin/holdco new <name> [title] [tagline]  scaffold a new venture repo in ventures/<name> (status: incubating)
       bin/holdco register <id> <title> <repo> [operator]
       bin/holdco run <id> [goal] [--dry-run]   spawn operator as a tmux window (claude --remote-control)
       bin/holdco push-remote <name> <owner/repo>

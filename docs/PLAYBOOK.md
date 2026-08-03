@@ -79,7 +79,7 @@ would pay for, plus the funnel to reach them. Capture the thesis in `ventures/<n
 ## 3. Incubation: operator writes the business plan
 
 ```
-cd ~/code/<name>
+cd ventures/<name>          # or wherever this venture's ventures/<name>.md repo: points
 ./<name>            # operator's first job: fill BUSINESS-PLAN.md
 ```
 

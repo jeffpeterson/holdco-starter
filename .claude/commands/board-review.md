@@ -18,7 +18,8 @@ disable-model-invocation: true
 
 ### Target
 
-$ARGUMENTS — if this is a venture ID, the target is ~/code/$ARGUMENTS. If "portfolio" or
+$ARGUMENTS — if this is a venture ID, the target is its `repo:` path in `ventures/<id>.md`
+(never assume ~/code). If "portfolio" or
 blank, the target is the full fleet (read PORTFOLIO.md + WORKLOG.md).
 
 ### Instructions

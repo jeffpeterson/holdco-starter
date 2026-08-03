@@ -1,7 +1,7 @@
 # The portfolio registry + the new-venture scaffold. This is what makes holdco a
 # *meta*-manager: one file per business under `ventures/` (same one-file-per-entry
 # pattern as tasks/), a generated `PORTFOLIO.md` index, and `rake ventures:new`
-# which stamps a complete, self-running operator repo into ~/code from
+# which stamps a complete, self-running operator repo into ventures/ from
 # templates/new-venture/ — so starting business N+1 is one command, not a rebuild.
 #
 # Venture frontmatter (see ventures/_template.md):
