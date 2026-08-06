@@ -13,8 +13,9 @@
 # the claude process subtree's RSS and recycles (graceful SIGTERM → SIGKILL) when
 # it crosses a cap or outlives a max lifetime. When claude exits — by recycle,
 # crash, or otherwise — it is relaunched with --resume <pinned-id>, which resumes
-# the SAME session thread (so SESSIONS.md links + the remote-control conversation
-# stay valid and the operator's loop is unbroken). The relaunch is a fresh OS
+# the SAME session thread (so the Claude-Session id already on your commits still
+# matches, and the remote-control conversation + operator's loop stay unbroken). The
+# relaunch is a fresh OS
 # process, so the leaked RSS is reclaimed; --resume merely rehydrates the convo.
 #
 # SESSION PINNING: we do NOT use `claude --continue` — it resumes the most-recently

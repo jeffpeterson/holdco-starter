@@ -3,7 +3,7 @@
 ## What it is, and why
 
 Every animal sleeps to consolidate memory and shed the day's noise. An autonomous agent that
-accumulates memories, WORKLOG entries, and persona rules forever — without ever pruning — drifts
+accumulates memories, commits, and persona rules forever — without ever pruning — drifts
 toward higher entropy: stale facts crowd out live ones, near-duplicate memories pile up, verbose
 notes burn context on every turn, and the same tool mistakes recur because nobody wrote down the
 right invocation. The **dream cycle** is the maintenance routine that fights that entropy.
@@ -18,9 +18,10 @@ A dream works through six steps in order:
 1. **Memory consolidation** — read every memory file (`~/.claude/projects/<slug>/memory/*.md`);
    archive stale/one-time-event entries to `_archive/`, shorten verbose ones to their essential
    assertion, merge near-duplicates, then rebuild the `MEMORY.md` index to match the live files.
-2. **WORKLOG mining** — read the last ~20 `WORKLOG.md` entries and capture any uncaptured durable
-   lesson as a new memory file (Reflexion-style self-reflection), adding it to the index.
-3. **Tool-error triage** — scan recent WORKLOG entries and prior dream journals for recurring
+2. **Commit-log mining** — read the last ~20 commits (`git log -20 --format='%ad %s%n%b'
+   --date=short`) and capture any uncaptured durable lesson as a new memory file
+   (Reflexion-style self-reflection), adding it to the index.
+3. **Tool-error triage** — scan those recent commits and prior dream journals for recurring
    tool/command failures, and classify each:
    - **Fixable now** — small, clearly-safe patches (add a `--help`, fix a wrong default or a stale
      usage example). Applied directly. *Canonical example: `bin/email` had no `--help` flag, so
@@ -44,7 +45,7 @@ A dream works through six steps in order:
 ## Prior art adopted
 
 - **Reflexion** — the agent writes a self-reflective summary after experience accumulates →
-  the dream journal + WORKLOG-mined lessons (step 2, step 5).
+  the dream journal + commit-log-mined lessons (step 2, step 5).
 - **Hierarchical / tiered memory (MemGPT)** — hot (in-context) → warm (memory files) → cold
   (`_archive/`); the dream promotes/demotes between tiers (step 1).
 - **Sleep-time compute** — idle inference spent on consolidation/indexing, not task execution;

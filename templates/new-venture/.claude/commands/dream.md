@@ -1,7 +1,7 @@
 ---
-description: Run the dream cycle in-session — consolidate memory, mine WORKLOG for lessons, triage
-  recurring tool errors, flag persona bloat, and commit a dated journal to docs/dreams/. Cheap
-  maintenance, not product work.
+description: Run the dream cycle in-session — consolidate memory, mine the commit log for
+  lessons, triage recurring tool errors, flag persona bloat, and commit a dated journal to
+  docs/dreams/. Cheap maintenance, not product work.
 argument-hint: ""
 ---
 
@@ -20,8 +20,9 @@ Work through these steps in order, then stop:
 1. **Memory consolidation** — read every `<mem>/*.md`; archive stale/one-time entries to
    `<mem>/_archive/`, shorten verbose ones to their essential assertion, merge near-duplicates,
    then rebuild `<mem>/MEMORY.md` to match the live files.
-2. **WORKLOG mining** — read the last ~20 `WORKLOG.md` entries; capture any uncaptured durable
-   lesson as a new memory file + index line. Skip one-offs.
+2. **Commit-log mining** — read the last ~20 commits (`git log -20 --format='%ad %s%n%b'
+   --date=short`); capture any uncaptured durable lesson as a new memory file + index line.
+   Skip one-offs.
 3. **Tool-error triage** — scan those entries (and prior `docs/dreams/*.md`) for recurring
    tool/command failures. Fix small safe ones directly (e.g. add a missing `--help`, like
    `bin/email` once lacked), document usage errors in the persona/`AGENTS.md`, file anything

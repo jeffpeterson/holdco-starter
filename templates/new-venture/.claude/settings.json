@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'open=$(find tasks -name \"*.md\" ! -name \"_*\" 2>/dev/null | xargs grep -l \"^status: open\" 2>/dev/null | wc -l | tr -d \" \"); echo \"=== Post-compact context: {{TITLE}} — {{TAGLINE}} | persona: .claude/agents/operator.md | rules: AGENTS.md | $open open task(s) in TASKS.md | log each pass to WORKLOG.md ===\"'"
+            "command": "bash -c 'open=$(find tasks -name \"*.md\" ! -name \"_*\" 2>/dev/null | xargs grep -l \"^status: open\" 2>/dev/null | wc -l | tr -d \" \"); echo \"=== Post-compact context: {{TITLE}} — {{TAGLINE}} | persona: .claude/agents/operator.md | rules: AGENTS.md | $open open task(s) in TASKS.md | log each pass in your commit message ===\"'"
           }
         ]
       }

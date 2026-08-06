@@ -5,7 +5,7 @@
 # Every animal sleeps to consolidate memory and shed noise; an autonomous operator
 # should too. This launches a CHEAP-model claude agent with the dream persona that
 # reads this repo's memory files, archives the stale, shortens the verbose, merges
-# duplicates, mines WORKLOG.md for uncaptured lessons, triages recurring tool errors,
+# duplicates, mines the recent commit log for uncaptured lessons, triages recurring tool errors,
 # flags persona bloat, and commits a dated journal to docs/dreams/. It is maintenance,
 # NOT product work — never run it on Opus, and it never pushes.
 #

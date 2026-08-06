@@ -30,6 +30,5 @@ rake task            # capture a new task in your $EDITOR (git-commit style)
 | `AGENTS.md` | The working agreement (also `CLAUDE.md`). **Fill in the stack bits.** |
 | `tasks/` | Backlog, one file per task. Indexed by `TASKS.md` (generated). |
 | `docs/LAUNCH.md` | How the system works / current state. |
-| `WORKLOG.md` | Running narrative of each operating pass. |
 
 See `docs/LAUNCH.md` for the runbook and `AGENTS.md` for how the operator works.

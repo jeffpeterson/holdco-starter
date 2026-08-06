@@ -93,7 +93,6 @@ You don't operate these directly — this is a map of what holdco works with.
 | `services/` | Optional Cloudflare Workers (inbox + tasks board) and the email-channel MCP server. |
 | `docs/` | `PLAYBOOK.md` (start-and-run flow), `PROVISIONING.md` (how holdco deploys its own infra), `CONFIG.md` (every env knob), `COST.md`, `EMAIL.md`, and more — reference material for holdco itself. |
 | `AGENTS.md` | The holdco working agreement (also `CLAUDE.md`). |
-| `WORKLOG.md` | Running narrative of each operating pass. |
 
 ## How it works
 

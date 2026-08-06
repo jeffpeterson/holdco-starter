@@ -53,7 +53,7 @@ What you get in the new repo:
   (Thesis / Market & Competition / Model & Unit Economics / MVP / Risks / Go/No-Go).
 - **`tasks/`** + generated **`TASKS.md`** — the one-file-per-task backlog machinery.
 - **`./<name>`** — the launcher that boots the autonomous operator.
-- **`docs/LAUNCH.md`**, **`WORKLOG.md`**, **`README.md`** — the durable state docs.
+- **`docs/LAUNCH.md`**, **`README.md`** — the durable state docs.
 
 ### Pushing to GitHub (use the safe helper)
 

@@ -13,7 +13,7 @@
 # of a pass, then stop.
 #
 # 🚨 HARD RULE — clean boundary ONLY. `/clear` WIPES all working state. Run this
-# ONLY after your work is committed AND the pass is logged to git (WORKLOG.md).
+# ONLY after your work is committed AND the pass is logged in the commit message.
 # NEVER mid-task. As a safety net this script REFUSES on a dirty working tree
 # (uncommitted tracked/staged changes); pass --force to override for the rare case
 # of intentional untracked scratch you don't commit.

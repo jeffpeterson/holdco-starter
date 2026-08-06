@@ -95,7 +95,7 @@ if [ "$ok" = 1 ]; then
     note="(channel registration not yet confirmed in the verify window — check logs/holdco-activate.log next pass)"
   fi
   "$REPO_ROOT/bin/email" "holdco: email channel activated" \
-    "The HoldCo supervisor window was recreated on the channel-wired launch (--channels plugin:email@holdco-fleet) and a live operator came up ${note}. Record the new holdco session id in SESSIONS.md on the next pass. Log: ${LOG}" \
+    "The HoldCo supervisor window was recreated on the channel-wired launch (--channels plugin:email@holdco-fleet) and a live operator came up ${note}. Record the new holdco session id as a Claude-Session: trailer on the next pass's commit. Log: ${LOG}" \
     >>"$LOG" 2>&1 || log "WARN success email failed"
   log "=== activation done OK ==="
   exit 0

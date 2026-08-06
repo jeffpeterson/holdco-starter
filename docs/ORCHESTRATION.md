@@ -138,9 +138,10 @@ which creeps up over hours/days — one operator recently ballooned to ~22GB and
 launched **through `bin/operator-loop`**, a tiny bash supervisor that wraps the `claude` process:
 
 - It runs claude in a **restart loop**. When claude exits — by recycle, crash, or otherwise — it
-  relaunches with `--continue`, resuming the **same session thread** (SESSIONS.md links and the
-  remote-control conversation stay valid; the operator's loop is unbroken). The relaunch is a
-  fresh OS process, so the leaked RSS is reclaimed.
+  relaunches with `--continue`, resuming the **same session thread** (the Claude-Session id
+  already on your commits still matches, and the remote-control conversation stays valid; the
+  operator's loop is unbroken). The relaunch is a fresh OS process, so the leaked RSS is
+  reclaimed.
 - A **watchdog** polls the claude subtree's RSS and recycles it (graceful SIGTERM → SIGKILL after
   a grace window) when RSS crosses a cap **or** the session outlives a max lifetime — whichever
   first. Operators persist to git/board continuously and `--continue` rehydrates context, so a
@@ -161,8 +162,8 @@ last-resort backstop that kills a runaway if it somehow still races past the cap
 ## Cost / observability
 Pay per token, same as interactive Claude Code; no hosting cost when operators run locally
 (Routines count against the subscription, daily cap applies). Observe via `claude agents --json`,
-`claude logs <id>`, session transcripts under `~/.claude/projects/`, and each venture's
-`WORKLOG.md`.
+`claude logs <id>`, session transcripts under `~/.claude/projects/`, and each venture's commit
+log.
 
 ## Delegating within a holdco pass (subagent mechanics)
 

@@ -22,7 +22,7 @@ section, run `whois <name>.com`, `whois <name>.ai`, and `whois <name>.co` (avail
 the holdco repo root (`$HOLDCO_ROOT`). Record results in the table and state the recommended
 domain. Don't propose a name without checking availability first.
 
-When done, log it to `WORKLOG.md` and **STOP**: await holdco's greenlight before building
+When done, log it in your commit message and **STOP**: await holdco's greenlight before building
 anything. Do not proceed to the loop below until holdco changes the venture status to `building`.
 
 **At greenlight, author `BRAND.md` first.** Before any customer-facing copy gets built, fill in
@@ -91,7 +91,7 @@ stale, keep when lean-and-soon). It's how *you* manage context hygiene instead o
 holdco to stop+relaunch you.
 
 > 🚨 **HARD RULE — clean boundary ONLY.** `/clear` **wipes all working state**. Run `bin/self-clear`
-> **only after** your work is committed **and** the pass is logged to git (`WORKLOG.md`) — i.e. as
+> **only after** your work is committed **and** the pass is logged in the commit message — i.e. as
 > the **final action of a pass**, then stop. **NEVER mid-task** (you'd lose uncommitted work). This
 > is safe *only* because the durable-thinking mandate already requires writing everything down
 > first. The script refuses on a dirty working tree as a backstop, but the discipline is yours.

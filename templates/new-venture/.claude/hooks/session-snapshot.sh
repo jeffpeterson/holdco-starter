@@ -11,7 +11,7 @@
 # Captures:
 #   - Exit reason (CLAUDE_SESSION_END_REASON env var)
 #   - git status --short (dirty-tree files, if any)
-#   - Last 10 lines of WORKLOG.md
+#   - Last 5 commits (git log)
 #
 # Design: always exit 0 (never block teardown); < 1 second; no jq required.
 
@@ -40,10 +40,10 @@ ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     echo "--- tree clean ---"
   fi
 
-  worklog="${project_dir}/WORKLOG.md"
-  if [ -f "$worklog" ]; then
-    echo "--- last 10 WORKLOG lines ---"
-    tail -n 10 "$worklog"
+  recent="$(cd "$project_dir" && git log -5 --oneline 2>/dev/null || true)"
+  if [ -n "$recent" ]; then
+    echo "--- last 5 commits ---"
+    echo "$recent"
   fi
 
   echo ""

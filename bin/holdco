@@ -326,8 +326,8 @@ end
 NUDGE_PROMPT =
   "[holdco nudge] Time for a proactive pass. Run your standard operating loop: assess CI/prod " \
   "+ your tasks/ backlog, advance the highest-leverage unblocked item (delegate the build to a " \
-  "coder/designer), then commit + log the pass to WORKLOG.md. When everything is committed + " \
-  "logged, optionally self-clear (bin/self-clear) and go idle — holdco will nudge you again next cadence."
+  "coder/designer), then commit + log the pass in your commit message. When everything is " \
+  "committed + logged, optionally self-clear (bin/self-clear) and go idle — holdco will nudge you again next cadence."
 
 # Wake one operator by injecting the nudge prompt into its live window. Returns
 # true if delivered. A dead/missing window is skipped (holdco relaunches windows

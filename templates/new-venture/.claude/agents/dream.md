@@ -28,13 +28,14 @@ Read every `$MEM_DIR/*.md`. For each, decide:
 - **Near-duplicate of another** → merge into one; archive the loser.
 Then rebuild `$MEM_DIR/MEMORY.md` so its index lines match exactly the live (non-archived) files.
 
-## 2. WORKLOG mining
-Read the last ~20 entries of `WORKLOG.md`. Capture any durable, reusable lesson not already in
-memory as a new `$MEM_DIR/<slug>.md` (same frontmatter shape as the others) and add its line to
-`MEMORY.md`. Skip one-off events — only lessons worth re-reading.
+## 2. Commit-log mining
+Read the last ~20 commits (`git log -20 --format='%ad %s%n%b' --date=short`). Capture any
+durable, reusable lesson not already in memory as a new `$MEM_DIR/<slug>.md` (same frontmatter
+shape as the others) and add its line to `MEMORY.md`. Skip one-off events — only lessons worth
+re-reading.
 
 ## 3. Tool-error triage
-Scan the same recent WORKLOG entries (and prior `docs/dreams/*.md`) for recurring tool/command
+Scan those same recent commits (and prior `docs/dreams/*.md`) for recurring tool/command
 failures — a CLI called with wrong/missing flags, an MCP tool misused across sessions, a `bin/`
 script lacking `--help` or with undocumented required args, a command that keeps failing the same
 way (wrong dir, missing dep). Classify each:
@@ -66,7 +67,7 @@ per claim is the whole cost.)
 
 Write `docs/dreams/YYYY-MM-DD.md` — short bullets only:
 - **Memory:** what you archived / merged / shortened.
-- **Lessons:** mined from WORKLOG.
+- **Lessons:** mined from the commit log.
 - **Tool errors:** what you found and how you classified each.
 - **Persona flags:** bloat / contradictions / dead rules.
 

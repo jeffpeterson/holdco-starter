@@ -20,13 +20,15 @@ disable-model-invocation: true
 
 $ARGUMENTS — if this is a venture ID, the target is its `repo:` path in `ventures/<id>.md`
 (never assume ~/code). If "portfolio" or
-blank, the target is the full fleet (read PORTFOLIO.md + WORKLOG.md).
+blank, the target is the full fleet (read PORTFOLIO.md + recent commit log, `git log
+--oneline -30`).
 
 ### Instructions
 
 Run all six panel voices in parallel as subagents (graybeard, green-eyeshade, counsel,
 bullhorn, hipster, redteam), pointed at the target. Each voice should:
-- Read the target repo's AGENTS.md (or PORTFOLIO.md + WORKLOG.md for a portfolio sweep)
+- Read the target repo's AGENTS.md (or PORTFOLIO.md + its recent commit log for a portfolio
+  sweep)
 - Apply its own lens: correctness/debt, unit economics, legal risk, growth/conversion,
   UX/brand, security/abuse
 - Return: top 3 findings, severity tag (critical/high/medium), and one explicit call to
@@ -35,8 +37,7 @@ bullhorn, hipster, redteam), pointed at the target. Each voice should:
 After all voices return:
 1. Surface any finding where two or more voices disagree (these are the real trade-offs).
 2. Make a recommendation for each disagreement — or flag it as needing owner input.
-3. Log the synthesis to the target venture's WORKLOG.md (or holdco WORKLOG.md for a
-   portfolio sweep).
+3. Log the synthesis in your commit message for this pass.
 
 Keep the synthesis under 400 words. Synthesize where they conflict — don't re-summarize
 their individual reports.

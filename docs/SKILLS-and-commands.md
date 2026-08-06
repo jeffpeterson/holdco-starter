@@ -205,7 +205,8 @@ blank, the target is the full fleet.
 
 Run all six panel voices in parallel as subagents (subagent_type: graybeard, green-eyeshade,
 counsel, bullhorn, hipster, redteam), pointed at the target. Each voice should:
-- Read the target repo's AGENTS.md (or PORTFOLIO.md + WORKLOG.md for a portfolio sweep)
+- Read the target repo's AGENTS.md (or PORTFOLIO.md + its recent commit log for a portfolio
+  sweep)
 - Apply its own lens: correctness/debt, unit economics, legal risk, growth/conversion,
   UX/brand, security/abuse
 - Return: top 3 findings, severity tag (critical/high/medium), and one explicit call to
@@ -214,8 +215,7 @@ counsel, bullhorn, hipster, redteam), pointed at the target. Each voice should:
 After all voices return:
 1. Surface any finding where two or more voices disagree (these are the real trade-offs).
 2. Make a recommendation for each disagreement — or flag it as needing owner input.
-3. Log the synthesis to the target venture's WORKLOG.md (or holdco WORKLOG.md for a
-   portfolio sweep).
+3. Log the synthesis in your commit message for this pass.
 
 Keep the synthesis under 400 words. The voices are already picky — don't re-summarize their
 reports, synthesize where they conflict.
@@ -283,9 +283,9 @@ disable-model-invocation: true
 ## Board review
 
 Run all six panel voices in parallel (graybeard, green-eyeshade, counsel, bullhorn, hipster,
-redteam) on this venture's codebase. Point each at: AGENTS.md, WORKLOG.md, and any recent
-changes. Each voice: top 3 findings + severity + one action. Synthesize where voices
-disagree. Log to WORKLOG.md. Under 400 words.
+redteam) on this venture's codebase. Point each at: AGENTS.md and any recent changes. Each
+voice: top 3 findings + severity + one action. Synthesize where voices disagree. Log the
+synthesis in your commit message. Under 400 words.
 ```
 
 **`launch-check.md`** (venture-scoped — pre-launch gate):

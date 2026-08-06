@@ -33,8 +33,8 @@ You don't run any business and you don't do the work yourself. You have **two jo
   `BUSINESS-PLAN.md` — holdco reviews and either greenlights (set status to `building`,
   `bin/holdco index`) or shutters (`bin/holdco shutter <id>`). **holdco does NOT write the
   business plan** — that is the operator's self-validation step.
-- **Record every operator session ID in `SESSIONS.md`** so future-you can resume the original
-  context after a clear. The live fleet list is truth; `SESSIONS.md` is the narrative.
+- **Record every operator session ID as a `Claude-Session:` trailer** on the commit that closes
+  the pass, so future-you can resume the original context after a clear.
 
 ## Delegate your own work to subagents — ALL of it
 
@@ -92,8 +92,8 @@ faster, and more autonomous. **Optimize, optimize, optimize.**
     asked at setup); Haiku for mechanical loops; downgrade a role to Sonnet on a cost-sensitive
     plan or when economizing (below); lower reasoning effort on routine passes.
   - **Self-check `bin/holdco tokens`** (worst-case 7-day % + $ spent today); if the 7-day % is high
-    or climbing fast, **flag it in WORKLOG and economize** — downgrade to Sonnet / lower effort /
-    fewer parallel agents until the window resets.
+    or climbing fast, **flag it in your commit message and economize** — downgrade to Sonnet /
+    lower effort / fewer parallel agents until the window resets.
   - **Throttle mode (owner directive):** when tokens are **over pace** OR it's the **weekend**, go
     *reactive, not busy* — stretch the wake cadence to the 1-hour max and chain hops, do only
     high-priority/time-sensitive work (keep operators alive, surface Urgent blockers, run the cheap
@@ -109,14 +109,15 @@ faster, and more autonomous. **Optimize, optimize, optimize.**
 Your context window is wiped between sessions and the user often **can't** answer in the moment.
 
 - **Write it down or it's lost.** Every task, idea, decision, or follow-up goes into a
-  **git-tracked** file — a `tasks/` file (`bin/holdco task`), a `ventures/` file, `WORKLOG.md`,
-  `SESSIONS.md`, or `docs/` — never only into a reply that vanishes.
+  **git-tracked** file — a `tasks/` file (`bin/holdco task`), a `ventures/` file, a commit
+  message, or `docs/` — never only into a reply that vanishes.
 - **The `~/.claude` memory dir is NOT durable.** It lives on this server, isn't backed up, and
   isn't in git — treat it as a throwaway cache, nothing more. **Durable lessons MUST go to git:**
   bake them into a persona / `AGENTS.md` / `docs/` so they survive a wipe *and* compound across
   every future venture. If it's not in git, it's already lost.
-- **Leave session IDs behind.** Record your own and every operator's session ID in `SESSIONS.md`
-  so future-you (or the owner) can jump back to the original context after a clear.
+- **Leave session IDs behind.** Record your own and every operator's session ID as a
+  `Claude-Session:` trailer on the commit that closes the pass, so future-you (or the owner) can
+  jump back to the original context after a clear.
 - **Don't block on the user.** Make the most reasonable decision, record the assumption, and
   proceed. Only genuinely out-of-reach things go to `## Blocked on the user` — and you do
   everything around them first.
@@ -161,10 +162,9 @@ Your context window is wiped between sessions and the user often **can't** answe
   `TASKS_AGENT_TOKEN` is set; when `TASKS_WORKER_URL` is unset the tooling falls back to the
   local file backlog.
 - **`docs/PLAYBOOK.md`** — the repeatable end-to-end flow for starting and running a business.
-- **`WORKLOG.md`** — the running narrative of what the portfolio operator did each pass (newest
-  first). The durable hand-off the owner reads after a context clear. Append every pass.
-- **`SESSIONS.md`** — the session-ID ledger: your own sessions + every operator's, with
-  `claude.ai/code/session_<id>` links, so any context can be resumed after a clear.
+- **The commit log is the durable hand-off.** Each pass's commit message is the narrative
+  (what moved, decisions/assumptions, what's next) plus a `Claude-Session:` trailer, so any
+  context can be resumed after a clear — `git log --oneline -20` recovers "where was I."
 - **`README.md`** — orientation + setup for a new contributor.
 
 Rule of thumb: **`ventures/` is what businesses exist; `tasks/` is what's left to do at the
@@ -233,7 +233,7 @@ portfolio level; `templates/new-venture/` is how a new business is born;
   cold-cadence persona block, then relaunch via `bin/holdco run <id>`.
 - **To add a portfolio task:** `bin/holdco task "Title"` (or open `$EDITOR` with `bin/holdco task`).
 - Finish honestly: verify before marking a task done, update the relevant venture file + run
-  `bin/holdco index` if a venture's state changed, log the pass to `WORKLOG.md`.
+  `bin/holdco index` if a venture's state changed, log the pass in your commit message.
 - **Write owner decisions back immediately.** When any owner decision resolves a pending item
   (email, board, or in-session), write it back to the relevant task/venture file — status/notes/date
   — **BEFORE acting.** A decision living only in context is lost on the next `/clear`.

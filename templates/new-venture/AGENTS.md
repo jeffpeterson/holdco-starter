@@ -63,8 +63,9 @@ Your subagents run the **same model you do**; trust them.
 ## Persist your thinking — context gets cleared
 
 - **Write it down or it's lost.** Every task, idea, decision, or follow-up goes into a `tasks/`
-  file (`rake tasks:new`), your memory, or `WORKLOG.md` — never only into a reply that vanishes.
-  Tag each `WORKLOG.md` entry with its `[Session](<url>)` link so any context can be resumed.
+  file (`rake tasks:new`), your memory, or a commit message — never only into a reply that
+  vanishes. Tag each pass's closing commit with a `Claude-Session:` trailer so any context can
+  be resumed.
 - **Write owner decisions back immediately.** When any owner decision resolves a pending item
   (email, board, or in-session), **write it back to the task file(s) — status/notes/date —
   BEFORE acting.** A decision living only in context or code is lost on the next `/clear`.
@@ -116,7 +117,7 @@ holdco sets your **cadence mode** (frontmatter `mode` in `ventures/<id>.md`, sho
 Periodically when your context is large and stale (before `bin/self-clear`, or roughly every 24h):
 run `bin/dream` to consolidate memory, prune persona bloat, and write a dream journal.
 Run it on a CHEAP model (Sonnet/Haiku) — never Opus. It archives stale memories, shortens verbose
-ones, mines `WORKLOG.md` for uncaptured lessons, triages recurring tool errors (fixes the small
+ones, mines the commit log for uncaptured lessons, triages recurring tool errors (fixes the small
 safe ones, files the rest), flags persona bloat, and commits a journal entry to `docs/dreams/`.
 You can also invoke it in-session with `/dream`.
 
@@ -137,8 +138,9 @@ You can also invoke it in-session with `/dream`.
   builder reads it before writing code; carry its values into any language it doesn't cover.
 - **`docs/LAUNCH.md`** — how the system actually works *right now*: hosting, deploy runbook +
   gotchas, credential status, storage, unit economics. The reference doc.
-- **`WORKLOG.md`** — the running narrative of what the operator did each pass (newest first). The
-  durable hand-off the owner reads after a context clear. Append every pass.
+- **The commit log is the durable hand-off.** Each pass's commit message is the narrative
+  (what shipped, decisions/assumptions, what's next) plus a `Claude-Session:` trailer, so any
+  context can be resumed after a clear.
 - **`README.md`** — local setup and stack overview.
 
 Rule of thumb: **`tasks/` (indexed by `TASKS.md`) is what's left to do; `docs/LAUNCH.md` is how
