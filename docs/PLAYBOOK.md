@@ -93,6 +93,11 @@ The quick tool is `bin/holdco domain <name>` — it prints AVAILABLE/taken for a
 at once. The plan records results in a table and recommends the domain to register. When done,
 it logs the result and pauses.
 
+**Owner-labor is part of the gate.** The Go/No-Go must estimate owner hours to launch (one-time)
+and to run per week. More than ~2 owner-hours/week to run, or a one-time setup step the owner
+can't delegate, is a No-Go unless the ROI is explicit — a "cheap" validation plan that eats the
+owner's hands isn't cheap.
+
 **holdco then reviews** — run the panel (`green-eyeshade` for economics, `graybeard` for tech
 risk, `redteam` to poke holes) or read the plan directly. Then:
 

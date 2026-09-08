@@ -2,7 +2,6 @@
   "enabledPlugins": {
     "email@holdco-fleet": true
   },
-  "fallbackModel": ["claude-sonnet-4-6", "claude-haiku-4-5"],
   "permissions": {
     "deny": ["AskUserQuestion"]
   },

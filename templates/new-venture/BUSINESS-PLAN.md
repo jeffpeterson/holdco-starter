@@ -45,3 +45,7 @@ _Top 3–5 risks that could kill this. For each: likelihood, impact, and mitigat
 
 _Honest verdict: should holdco greenlight building this, or shutter it here?
 What's the one thing that has to be true for this to work?_
+
+_Owner-hours: estimate to launch (one-time) ___ hrs; to run ___ hrs/week.
+More than ~2 owner-hours/week to run, or a one-time setup step the owner
+can't delegate, is a No-Go unless the ROI is explicit._
